@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f3ea;
+  --ink: #1d2b24;
+  --green: #1d6b3f;
+  --amber: #a35a00;
+  --card: #ffffff;
+  --shadow-soft: 0 2px 6px rgba(29, 43, 36, 0.06), 0 12px 32px rgba(29, 43, 36, 0.08);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-ink: var(--ink);
+  --color-green: var(--green);
+  --color-amber: var(--amber);
+  --color-card: var(--card);
+  --shadow-soft: var(--shadow-soft);
+  --radius-card: 1.25rem;
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-sans: var(--font-hind), system-ui, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-hind), system-ui, sans-serif;
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
