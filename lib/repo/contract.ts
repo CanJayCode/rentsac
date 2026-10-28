@@ -51,14 +51,18 @@ export function runContract(
 
     it("has rooms numbered 1..16", async () => {
       const rooms = await repo.listRooms();
-      expect(rooms.map((r) => r.number).sort((a, b) => a - b)).toEqual(
-        Array.from({ length: 16 }, (_, i) => i + 1),
-      );
+      expect(
+        rooms
+          .map((r) => r.number)
+          .filter((n) => n <= 16)
+          .sort((a, b) => a - b),
+      ).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
     });
 
     it("saveTenant assigns an id and updates when given one", async () => {
       const t = await repo.getTenant(tenantId);
       expect(t?.name).toBe("Asha");
+      expect(t).not.toHaveProperty("leftOn");
       await repo.saveTenant({ ...t!, name: "Asha K" });
       expect((await repo.getTenant(tenantId))?.name).toBe("Asha K");
       expect((await repo.listTenants()).filter((x) => x.id === tenantId)).toHaveLength(1);
@@ -183,10 +187,11 @@ export function runContract(
       expect((await repo.getTenant(tenantId))?.leftOn).toBe("2026-03-01");
       expect(await repo.listCharges(tenantId)).toHaveLength(1);
       expect(await repo.listPayments(tenantId)).toHaveLength(1);
-      expect((await repo.listTenants()).map((t) => t.id).sort()).toEqual(
-        [tenantId, other.id].sort(),
-      );
-      expect((await repo.listTenants({ activeOnly: true })).map((t) => t.id)).toEqual([other.id]);
+      const mine = new Set([tenantId, other.id]);
+      const ours = async (opts?: { activeOnly?: boolean }) =>
+        (await repo.listTenants(opts)).map((t) => t.id).filter((id) => mine.has(id));
+      expect((await ours()).sort()).toEqual([tenantId, other.id].sort());
+      expect(await ours({ activeOnly: true })).toEqual([other.id]);
     });
 
     it("rounds list newest date first and finishRound marks done", async () => {
@@ -194,7 +199,9 @@ export function runContract(
       const b = await repo.createRound("2026-03-10");
       const c = await repo.createRound("2026-02-10");
       expect(a.status).toBe("open");
-      expect((await repo.listRounds()).map((r) => r.id)).toEqual([b.id, c.id, a.id]);
+      const mine = new Set([a.id, b.id, c.id]);
+      const ours = (await repo.listRounds()).map((r) => r.id).filter((id) => mine.has(id));
+      expect(ours).toEqual([b.id, c.id, a.id]);
       await repo.finishRound(c.id);
       expect((await repo.getRound(c.id))?.status).toBe("done");
       expect((await repo.getRound(b.id))?.status).toBe("open");
@@ -247,38 +254,45 @@ export function runContract(
       const r1 = await repo.createRound("2026-01-10");
       const r3 = await repo.createRound("2026-03-10");
       const r2 = await repo.createRound("2026-02-10");
-      const other = (await repo.listRooms())[1].id;
-      expect(await repo.lastReading(roomId)).toBeNull();
-      await repo.saveRoundReadings(r1.id, [{ roomId, value: 100, baseReset: false }]);
-      await repo.saveRoundReadings(r2.id, [{ roomId, value: 150, baseReset: false }]);
+      // Fresh rooms: no readings from other tests or earlier runs on a shared store.
+      const freshRoom = async () =>
+        (await repo.saveRoom({ number: 100_000 + Math.floor(Math.random() * 1_000_000_000) })).id;
+      const room = await freshRoom();
+      const other = await freshRoom();
+      expect(await repo.lastReading(room)).toBeNull();
+      await repo.saveRoundReadings(r1.id, [{ roomId: room, value: 100, baseReset: false }]);
+      await repo.saveRoundReadings(r2.id, [{ roomId: room, value: 150, baseReset: false }]);
       await repo.saveRoundReadings(r3.id, [{ roomId: other, value: 999, baseReset: false }]);
 
-      expect(await repo.lastReading(roomId)).toBe(150);
-      expect(await repo.lastReading(roomId, r3.id)).toBe(150);
-      expect(await repo.lastReading(roomId, r2.id)).toBe(100);
-      expect(await repo.lastReading(roomId, r1.id)).toBeNull();
+      expect(await repo.lastReading(room)).toBe(150);
+      expect(await repo.lastReading(room, r3.id)).toBe(150);
+      expect(await repo.lastReading(room, r2.id)).toBe(100);
+      expect(await repo.lastReading(room, r1.id)).toBeNull();
     });
 
     it("settings round trip", async () => {
-      expect(await repo.getSetting("rate")).toBeNull();
-      await repo.setSetting("rate", "8");
-      expect(await repo.getSetting("rate")).toBe("8");
-      await repo.setSetting("rate", "9");
-      expect(await repo.getSetting("rate")).toBe("9");
+      const key = `rate-${crypto.randomUUID()}`;
+      expect(await repo.getSetting(key)).toBeNull();
+      await repo.setSetting(key, "8");
+      expect(await repo.getSetting(key)).toBe("8");
+      await repo.setSetting(key, "9");
+      expect(await repo.getSetting(key)).toBe("9");
     });
 
     it("recentFailures returns failed attempts in the window for the ip", async () => {
+      const ip = crypto.randomUUID();
+      const otherIp = crypto.randomUUID();
       vi.useFakeTimers();
       vi.setSystemTime(1_000_000);
-      await repo.recordAuthAttempt("1.1.1.1", false);
+      await repo.recordAuthAttempt(ip, false);
       vi.setSystemTime(2_000_000);
-      await repo.recordAuthAttempt("1.1.1.1", false);
-      await repo.recordAuthAttempt("1.1.1.1", true);
-      await repo.recordAuthAttempt("2.2.2.2", false);
-      expect(await repo.recentFailures("1.1.1.1", 0)).toEqual([1_000_000, 2_000_000]);
-      expect(await repo.recentFailures("1.1.1.1", 1_500_000)).toEqual([2_000_000]);
-      expect(await repo.recentFailures("1.1.1.1", 2_000_000)).toEqual([2_000_000]);
-      expect(await repo.recentFailures("1.1.1.1", 2_000_001)).toEqual([]);
+      await repo.recordAuthAttempt(ip, false);
+      await repo.recordAuthAttempt(ip, true);
+      await repo.recordAuthAttempt(otherIp, false);
+      expect(await repo.recentFailures(ip, 0)).toEqual([1_000_000, 2_000_000]);
+      expect(await repo.recentFailures(ip, 1_500_000)).toEqual([2_000_000]);
+      expect(await repo.recentFailures(ip, 2_000_000)).toEqual([2_000_000]);
+      expect(await repo.recentFailures(ip, 2_000_001)).toEqual([]);
     });
 
     it("returned objects are copies; mutating them does not change stored state", async () => {

@@ -35,7 +35,7 @@ const toTenant = (r: Row): Tenant => ({
   rentAmount: r.rent_amount,
   cycleStartDay: r.cycle_start_day,
   startedOn: r.started_on,
-  leftOn: r.left_on,
+  ...(r.left_on != null ? { leftOn: r.left_on } : {}),
 });
 
 const toCharge = (r: Row): RepoCharge => ({
@@ -86,15 +86,18 @@ function defined(row: Row): Row {
   return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined));
 }
 
-function createClientFromEnv(): SupabaseClient {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export type SupabaseRepoConfig = { url?: string; key?: string };
+
+function createDb(config: SupabaseRepoConfig): SupabaseClient {
+  const url = config.url ?? process.env.SUPABASE_URL;
+  const key = config.key ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url) throw new Error("SUPABASE_URL is not set");
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-export function createSupabaseRepo(db: SupabaseClient = createClientFromEnv()): Repo {
+export function createSupabaseRepo(config: SupabaseRepoConfig = {}): Repo {
+  const db = createDb(config);
   async function list(q: Query, what: string): Promise<Row[]> {
     const { data, error } = await q;
     if (error) throw new Error(`${what}: ${error.message}`);
