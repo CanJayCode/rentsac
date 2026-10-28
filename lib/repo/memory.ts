@@ -1,3 +1,4 @@
+import { chargeDedupeKey } from "./charge-key";
 import type {
   MainReading,
   Reading,
@@ -11,15 +12,7 @@ import type {
 
 const copy = <T extends object>(x: T): T => ({ ...x });
 
-function chargeKey(c: Omit<RepoCharge, "id">): string {
-  const discriminator =
-    c.kind === "rent"
-      ? c.periodStart
-      : c.kind === "light"
-        ? c.roundId
-        : `opening:${c.openingFor ?? "rent"}`;
-  return `${c.tenantId}|${c.kind}|${discriminator}`;
-}
+const chargeKey = (c: Omit<RepoCharge, "id">) => `${c.tenantId}|${chargeDedupeKey(c)}`;
 
 export function createMemoryRepo(): Repo {
   const rooms: Room[] = Array.from({ length: 16 }, (_, i) => ({

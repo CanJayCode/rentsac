@@ -60,6 +60,7 @@ export interface Repo {
   /**
    * Idempotent on tenantId + kind + periodStart (rent), roundId (light) or
    * "opening:" + openingFor (opening). A repeat returns the existing charge.
+   * Throws when the discriminator is missing (rent without periodStart, light without roundId).
    */
   addCharge(c: Omit<RepoCharge, "id">): Promise<RepoCharge>;
 
@@ -76,7 +77,7 @@ export interface Repo {
 
   createRound(date: string): Promise<Round>;
   getRound(id: string): Promise<Round | null>;
-  /** Newest date first. */
+  /** Newest date first; rounds on the same date list the later-created one first. */
   listRounds(): Promise<Round[]>;
   /** Upsert per room within the round. */
   saveRoundReadings(roundId: string, rows: Omit<Reading, "roundId">[]): Promise<void>;

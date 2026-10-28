@@ -21,8 +21,12 @@ const payment = (tenantId: string, amount: number): NewPayment => ({
   upi: 0,
 });
 
-export function runContract(name: string, makeRepo: () => Promise<Repo> | Repo): void {
-  describe(`${name} repo contract`, () => {
+export function runContract(
+  name: string,
+  makeRepo: () => Promise<Repo> | Repo,
+  opts: { skip?: boolean } = {},
+): void {
+  describe.skipIf(opts.skip ?? false)(`${name} repo contract`, () => {
     let repo: Repo;
     let tenantId: string;
     let roomId: string;
@@ -105,6 +109,31 @@ export function runContract(name: string, makeRepo: () => Promise<Repo> | Repo):
       expect(await repo.listCharges(tenantId)).toHaveLength(2);
     });
 
+    it("addCharge keys charges per tenant", async () => {
+      const other = await repo.saveTenant({
+        roomId: (await repo.listRooms())[1].id,
+        name: "Ravi",
+        rentAmount: 4000,
+        cycleStartDay: 5,
+        startedOn: "2026-01-05",
+      });
+      const a = await repo.addCharge(rentCharge(tenantId, "2026-01-01"));
+      const b = await repo.addCharge(rentCharge(other.id, "2026-01-01"));
+      expect(b.id).not.toBe(a.id);
+      expect(await repo.listCharges(tenantId)).toHaveLength(1);
+      expect(await repo.listCharges(other.id)).toHaveLength(1);
+    });
+
+    it("addCharge throws when the discriminator is missing", async () => {
+      await expect(
+        repo.addCharge({ ...rentCharge(tenantId, "2026-01-01"), periodStart: undefined }),
+      ).rejects.toThrow();
+      await expect(
+        repo.addCharge({ tenantId, kind: "light", dueDate: "2026-01-10", amount: 100 }),
+      ).rejects.toThrow();
+      expect(await repo.listCharges(tenantId)).toHaveLength(0);
+    });
+
     it("addPayment with the same idemKey stores one payment", async () => {
       const a = await repo.addPayment(payment(tenantId, 1000), "key-1");
       const b = await repo.addPayment(payment(tenantId, 1000), "key-1");
@@ -170,6 +199,13 @@ export function runContract(name: string, makeRepo: () => Promise<Repo> | Repo):
       expect((await repo.getRound(c.id))?.status).toBe("done");
       expect((await repo.getRound(b.id))?.status).toBe("open");
       expect(await repo.getRound("missing")).toBeNull();
+    });
+
+    it("rounds on the same date list the later-created one first", async () => {
+      const a = await repo.createRound("2026-05-10");
+      const b = await repo.createRound("2026-05-10");
+      const ids = (await repo.listRounds()).map((r) => r.id);
+      expect(ids.indexOf(b.id)).toBeLessThan(ids.indexOf(a.id));
     });
 
     it("saveRoundReadings upserts per room within a round", async () => {
