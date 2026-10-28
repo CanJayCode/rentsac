@@ -96,6 +96,10 @@ export interface Repo {
   setSetting(key: string, value: string): Promise<void>;
 
   recordAuthAttempt(ip: string, ok: boolean): Promise<void>;
-  /** Epoch-ms timestamps of failed attempts at or after sinceMs. */
+  /**
+   * Epoch-ms timestamps of failed attempts for the ip at or after sinceMs that were recorded
+   * after the ip's most recent successful attempt. A success clears every earlier failure,
+   * including one recorded in the same millisecond: order is insertion order, not the clock.
+   */
   recentFailures(ip: string, sinceMs: number): Promise<number[]>;
 }

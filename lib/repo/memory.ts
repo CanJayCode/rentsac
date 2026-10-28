@@ -167,7 +167,14 @@ export function createMemoryRepo(): Repo {
       attempts.push({ ip, ok, at: Date.now() });
     },
     async recentFailures(ip, sinceMs) {
-      return attempts.filter((a) => a.ip === ip && !a.ok && a.at >= sinceMs).map((a) => a.at);
+      // Insertion order decides what "after the last success" means, not the timestamps.
+      let lastOk = -1;
+      attempts.forEach((a, i) => {
+        if (a.ip === ip && a.ok) lastOk = i;
+      });
+      return attempts
+        .filter((a, i) => i > lastOk && a.ip === ip && !a.ok && a.at >= sinceMs)
+        .map((a) => a.at);
     },
   };
 }

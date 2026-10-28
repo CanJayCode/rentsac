@@ -1,24 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSessionSecret, SESSION_COOKIE } from "./lib/auth/cookie";
-import { verifySession } from "./lib/auth/session";
+import { SESSION_COOKIE } from "./lib/auth/cookie";
+import { isPublicPath } from "./lib/auth/public-paths";
+import { hasValidSession } from "./lib/auth/session-check";
 
 // Next 16 file convention (formerly middleware.ts). Web Crypto only: no node:crypto, no repo.
-// Every page without a valid session cookie goes to /lock.
+// Every request without a valid session cookie goes to /lock, except the explicit public paths.
+// This is the first gate only: pages call requireSession() and server actions call
+// assertSessionAction() themselves.
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  if (pathname === "/lock" || pathname.startsWith("/lock/")) return NextResponse.next();
-
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (token && (await verifySession(token, getSessionSecret(), Date.now()))) {
+  if (isPublicPath(request.nextUrl.pathname)) return NextResponse.next();
+  if (await hasValidSession(request.cookies.get(SESSION_COOKIE)?.value, Date.now())) {
     return NextResponse.next();
   }
   return NextResponse.redirect(new URL("/lock", request.url));
 }
 
 export const config = {
-  matcher: [
-    // Everything except Next's static output, the favicon, icons, the manifest and files with
-    // a static-asset extension.
-    "/((?!_next/static|_next/image|favicon\\.ico|icons/|manifest\\.webmanifest|manifest\\.json|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|txt|xml|woff|woff2|webmanifest)$).*)",
-  ],
+  // Skip only Next's own build output and the favicon here, for speed. Everything else,
+  // whatever its extension, runs through isPublicPath above.
+  matcher: ["/((?!_next/static/|_next/image$|favicon\\.ico$).*)"],
 };

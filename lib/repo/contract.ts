@@ -287,12 +287,47 @@ export function runContract(
       await repo.recordAuthAttempt(ip, false);
       vi.setSystemTime(2_000_000);
       await repo.recordAuthAttempt(ip, false);
-      await repo.recordAuthAttempt(ip, true);
       await repo.recordAuthAttempt(otherIp, false);
       expect(await repo.recentFailures(ip, 0)).toEqual([1_000_000, 2_000_000]);
       expect(await repo.recentFailures(ip, 1_500_000)).toEqual([2_000_000]);
       expect(await repo.recentFailures(ip, 2_000_000)).toEqual([2_000_000]);
       expect(await repo.recentFailures(ip, 2_000_001)).toEqual([]);
+    });
+
+    it("recentFailures: a success clears earlier failures, even in the same millisecond", async () => {
+      const ip = crypto.randomUUID();
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000);
+      await repo.recordAuthAttempt(ip, false);
+      vi.setSystemTime(2_000_000);
+      await repo.recordAuthAttempt(ip, false);
+      await repo.recordAuthAttempt(ip, true);
+      expect(await repo.recentFailures(ip, 0)).toEqual([]);
+    });
+
+    it("recentFailures: failures after a success count", async () => {
+      const ip = crypto.randomUUID();
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000);
+      await repo.recordAuthAttempt(ip, false);
+      await repo.recordAuthAttempt(ip, true);
+      await repo.recordAuthAttempt(ip, false);
+      vi.setSystemTime(3_000_000);
+      await repo.recordAuthAttempt(ip, false);
+      expect(await repo.recentFailures(ip, 0)).toEqual([1_000_000, 3_000_000]);
+      expect(await repo.recentFailures(ip, 2_000_000)).toEqual([3_000_000]);
+    });
+
+    it("recentFailures: a success for one ip leaves other ips' failures alone", async () => {
+      const ip = crypto.randomUUID();
+      const otherIp = crypto.randomUUID();
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000);
+      await repo.recordAuthAttempt(otherIp, false);
+      await repo.recordAuthAttempt(ip, false);
+      await repo.recordAuthAttempt(ip, true);
+      expect(await repo.recentFailures(otherIp, 0)).toEqual([1_000_000]);
+      expect(await repo.recentFailures(ip, 0)).toEqual([]);
     });
 
     it("returned objects are copies; mutating them does not change stored state", async () => {

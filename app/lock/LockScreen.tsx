@@ -141,7 +141,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
   }
 
   const onKeyDown = useEffectEvent((e: KeyboardEvent) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
     if (/^[0-9]$/.test(e.key)) {
@@ -230,7 +230,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
               </p>
             </div>
 
-            <div className={`grid grid-cols-3 gap-x-6 gap-y-3.5 transition-opacity duration-200 ${locked ? "opacity-35" : ""}`}>
+            <div className={`grid grid-cols-3 gap-x-6 gap-y-3.5 transition-opacity duration-200 motion-reduce:transition-none ${locked ? "opacity-35" : ""}`}>
               {DIGITS.map((d) => (
                 <DigitKey key={d} digit={d} disabled={inputBlocked} onPress={press} />
               ))}

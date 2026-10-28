@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashPin, isValidPin, verifyPin } from "./pin";
 import { LOCKOUT_LIMIT, LOCKOUT_WINDOW_MS, lockoutState } from "./ratelimit";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { config as proxyConfig } from "../../proxy";
+import { isPublicPath } from "./public-paths";
 import { signSession, verifySession } from "./session";
+import { hasValidSession } from "./session-check";
 
 const SECRET = "test-secret-0123456789abcdef";
 const DAY = 24 * 60 * 60 * 1000;
@@ -183,6 +187,12 @@ vi.mock("next/headers", () => ({
   }),
   headers: async () => ({ get: (k: string) => requestHeaders.get(k.toLowerCase()) ?? null }),
 }));
+// verifyPin stays real; the wrapper only counts how many PINs were actually checked.
+vi.mock("./pin", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./pin")>();
+  return { ...real, verifyPin: vi.fn(real.verifyPin) };
+});
+
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`REDIRECT:${to}`);
@@ -255,6 +265,55 @@ describe("lock actions", () => {
     expect(cookieJar.has("rentsac_session")).toBe(true);
   });
 
+  it("a burst of 20 concurrent wrong PINs gets at most 5 checks; the rest are refused as locked", async () => {
+    const { setupPin, unlock } = await import("../../app/lock/actions");
+    await setupPin("482913", "482913");
+    vi.mocked(verifyPin).mockClear();
+    const results = await Promise.all(Array.from({ length: 20 }, () => unlock("000000")));
+    expect(vi.mocked(verifyPin).mock.calls.length).toBeLessThanOrEqual(5);
+    const invalid = results.filter((r) => !r.ok && r.error === "invalid").length;
+    const locked = results.filter((r) => !r.ok && r.error === "locked").length;
+    expect(invalid).toBeLessThanOrEqual(5);
+    expect(invalid + locked).toBe(20);
+    // Afterwards even the right PIN is refused from that IP.
+    expect(await unlock("482913")).toMatchObject({ ok: false, error: "locked" });
+  });
+
+  it("the right PIN as the third attempt succeeds and clears the failures", async () => {
+    const { setupPin, unlock } = await import("../../app/lock/actions");
+    const { getRepo } = await import("../repo");
+    await setupPin("482913", "482913");
+    cookieJar.clear();
+    expect(await unlock("000000")).toEqual({ ok: false, error: "invalid" });
+    expect(await unlock("111111")).toEqual({ ok: false, error: "invalid" });
+    expect(await unlock("482913")).toEqual({ ok: true });
+    expect(cookieJar.has("rentsac_session")).toBe(true);
+    expect(await (await getRepo()).recentFailures("203.0.113.7", 0)).toEqual([]);
+    // A fresh run of failures starts from zero: four more wrong tries do not lock.
+    for (let i = 0; i < 4; i++) expect(await unlock("000000")).toEqual({ ok: false, error: "invalid" });
+  });
+
+  it("setup-code guesses are counted before checking, so a burst is capped too", async () => {
+    process.env.SETUP_CODE = "orchid-42";
+    const { setupPin } = await import("../../app/lock/actions");
+    const results = await Promise.all(Array.from({ length: 20 }, () => setupPin("482913", "482913", "nope")));
+    const wrongCode = results.filter((r) => !r.ok && r.error === "setup-code").length;
+    expect(wrongCode).toBeLessThanOrEqual(5);
+    expect(results.every((r) => !r.ok && (r.error === "setup-code" || r.error === "locked"))).toBe(true);
+    expect(await setupPin("482913", "482913", "orchid-42")).toMatchObject({ ok: false, error: "locked" });
+  });
+
+  it("requireSession redirects and assertSessionAction throws without a valid session", async () => {
+    const { requireSession, assertSessionAction } = await import("./require-session");
+    await expect(requireSession()).rejects.toThrow("REDIRECT:/lock");
+    await expect(assertSessionAction()).rejects.toThrow("Unauthorized");
+    cookieJar.set("rentsac_session", { value: "1.bogus", options: {} });
+    await expect(assertSessionAction()).rejects.toThrow("Unauthorized");
+    cookieJar.set("rentsac_session", { value: await signSession(Date.now() + DAY, SECRET), options: {} });
+    await expect(requireSession()).resolves.toBeUndefined();
+    await expect(assertSessionAction()).resolves.toBeUndefined();
+  });
+
   it("lock clears the session cookie and goes to /lock", async () => {
     const { lock, setupPin } = await import("../../app/lock/actions");
     await setupPin("482913", "482913");
@@ -268,5 +327,65 @@ describe("lock actions", () => {
     const { setupPin, unlock } = await import("../../app/lock/actions");
     await expect(setupPin("482913", "482913")).rejects.toThrow(/SESSION_SECRET/);
     await expect(unlock("482913")).rejects.toThrow(/SESSION_SECRET/);
+  });
+});
+
+describe("hasValidSession", () => {
+  const env = { ...process.env };
+  beforeEach(() => {
+    process.env.SESSION_SECRET = SECRET;
+  });
+  afterEach(() => {
+    process.env = { ...env };
+  });
+  const now = Date.UTC(2026, 9, 28, 12, 0, 0);
+
+  it("rejects a missing cookie", async () => {
+    expect(await hasValidSession(undefined, now)).toBe(false);
+    expect(await hasValidSession("", now)).toBe(false);
+  });
+  it("rejects a tampered cookie", async () => {
+    const [exp, sig] = (await signSession(now + DAY, SECRET)).split(".");
+    expect(await hasValidSession(`${Number(exp) + 1}.${sig}`, now)).toBe(false);
+  });
+  it("rejects an expired cookie", async () => {
+    expect(await hasValidSession(await signSession(now + DAY, SECRET), now + 2 * DAY)).toBe(false);
+  });
+  it("accepts a valid cookie", async () => {
+    expect(await hasValidSession(await signSession(now + DAY, SECRET), now)).toBe(true);
+  });
+  it("throws when SESSION_SECRET is missing", async () => {
+    delete process.env.SESSION_SECRET;
+    await expect(hasValidSession("1.x", now)).rejects.toThrow(/SESSION_SECRET/);
+  });
+});
+
+describe("isPublicPath and the proxy matcher", () => {
+  const cases: [string, boolean][] = [
+    ["/lock", true],
+    ["/lock/x", false],
+    ["/rooms/5.png", false],
+    ["/x.txt", false],
+    ["/_next/static/a.js", true],
+    ["/manifest.webmanifest", true],
+    ["/favicon.ico", true],
+    ["/", false],
+    ["/icons/icon-192.png", true],
+    ["/icons/../rooms", false],
+    ["/icons/a/b.png", false],
+    ["/_next/data/build/x.json", false],
+    ["/lockout", false],
+  ];
+  it.each(cases)("%s -> %s", (path, expected) => {
+    expect(isPublicPath(path)).toBe(expected);
+  });
+
+  it("runs the proxy for every non-static path, whatever its extension", () => {
+    for (const url of ["/", "/lock", "/rooms/5", "/rooms/5.png", "/x.txt", "/icons/a.png", "/manifest.webmanifest"]) {
+      expect(unstable_doesMiddlewareMatch({ config: proxyConfig, url }), url).toBe(true);
+    }
+    for (const url of ["/_next/static/chunks/a.js", "/_next/image", "/favicon.ico"]) {
+      expect(unstable_doesMiddlewareMatch({ config: proxyConfig, url }), url).toBe(false);
+    }
   });
 });

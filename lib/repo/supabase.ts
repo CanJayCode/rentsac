@@ -380,16 +380,26 @@ export function createSupabaseRepo(config: SupabaseRepoConfig = {}): Repo {
       );
     },
     async recentFailures(ip, sinceMs) {
-      const data = await list(
+      // The bigserial id is the insertion order: failures count only after the last success.
+      const lastOk = await maybeOne(
         db
           .from("auth_attempts")
-          .select("at")
+          .select("id")
           .eq("ip", ip)
-          .eq("ok", false)
-          .gte("at", new Date(sinceMs).toISOString())
-          .order("at"),
-        "recentFailures",
+          .eq("ok", true)
+          .order("id", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        "recentFailures:lastOk",
       );
+      let query = db
+        .from("auth_attempts")
+        .select("at")
+        .eq("ip", ip)
+        .eq("ok", false)
+        .gte("at", new Date(sinceMs).toISOString());
+      if (lastOk) query = query.gt("id", lastOk.id as number);
+      const data = await list(query.order("id"), "recentFailures");
       return data.map((r) => Date.parse(r.at));
     },
   };
