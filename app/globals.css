@@ -230,6 +230,11 @@ html:lang(mr) .font-display {
   }
 }
 
+/* The round screen: a focused reading box never hides under the header or the Save bar. */
+html:has(form[data-round]) {
+  scroll-padding: 6rem 0 13rem;
+}
+
 /* Hind's Devanagari sits high in a centred pill; drop it to the optical middle. */
 html:lang(mr) .deva-nudge {
   padding-top: 0.14em;

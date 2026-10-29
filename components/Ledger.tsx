@@ -66,7 +66,7 @@ export function Ledger({ locale, rows, roomNumber, tenantId, cycleStartDay, edit
   );
 }
 
-function DatePlate({ locale, date, tone }: { locale: Locale; date: string; tone: "charge" | "payment" | "gone" }) {
+export function DatePlate({ locale, date, tone }: { locale: Locale; date: string; tone: "charge" | "payment" | "gone" }) {
   const { day, month } = dateParts(locale, date);
   const colour = tone === "payment" ? "bg-green-soft text-green-deep" : tone === "gone" ? "bg-well/60 text-ink/40" : "bg-well text-ink";
   return (
@@ -109,15 +109,26 @@ function ChargeItem({ locale, row, cycleStartDay }: { locale: Locale; row: Charg
   } else {
     title = t(locale, "money.light");
     const parts: string[] = [];
-    if (c.prevReading != null && c.currReading != null) {
+    if (c.prevReading == null && c.currReading != null) {
+      // The room's first reading is its starting point: a ₹0 bill.
+      parts.push(t(locale, "ledger.firstReading", { curr: c.currReading }));
+    } else if (c.prevReading != null && c.currReading != null && c.currReading < c.prevReading) {
+      // A confirmed new meter restarts the base: also ₹0.
+      parts.push(t(locale, "ledger.newBase", { curr: c.currReading, prev: c.prevReading }));
+    } else if (c.prevReading != null && c.currReading != null) {
       parts.push(t(locale, "ledger.reading", { prev: c.prevReading, curr: c.currReading }));
     }
-    if (c.units != null && c.rate != null) parts.push(t(locale, "ledger.units", { units: c.units, rate: formatINR(c.rate) }));
+    const newBase = c.currReading != null && (c.prevReading == null || c.currReading < c.prevReading);
+    if (!newBase && c.units != null && c.rate != null) {
+      // Kept on one line, so "× ₹10" never wraps away from its units.
+      parts.push(t(locale, "ledger.units", { units: c.units, rate: formatINR(c.rate) }).replace(/ /g, " "));
+    }
     detail = parts.length > 0 ? parts.join(" · ") : formatDay(locale, c.dueDate);
   }
 
+  // A ₹0 bill (a first reading or a new meter) was never owed, so it is not "paid" either.
   const aside =
-    row.state === "paid" ? (
+    row.amount === 0 ? null : row.state === "paid" ? (
       <span className="inline-flex flex-none items-center gap-1 text-[0.9375rem] font-semibold text-green-deep">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="m3.5 8.4 2.9 2.9 6.1-6.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
