@@ -5,60 +5,17 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSessionSecret, SESSION_COOKIE, SESSION_MAX_AGE_MS, SESSION_MAX_AGE_S } from "../../lib/auth/cookie";
 import { hashPin, isValidPin, verifyPin } from "../../lib/auth/pin";
-import {
-  clientIp,
-  LOCKOUT_LIMIT,
-  LOCKOUT_LOOKBACK_MS,
-  LOCKOUT_WINDOW_MS,
-  lockoutState,
-} from "../../lib/auth/ratelimit";
+import { afterFailure, beginAttempt, type LockedResult } from "../../lib/auth/attempts";
+import { clientIp } from "../../lib/auth/ratelimit";
 import { signSession } from "../../lib/auth/session";
 import { getRepo } from "../../lib/repo";
 
 export type AuthResult =
   | { ok: true }
   | { ok: false; error: "invalid" | "format" | "mismatch" | "setup-code" | "already-set" | "not-set" }
-  | { ok: false; error: "locked"; retryInSeconds: number };
+  | LockedResult;
 
 const PIN_HASH_KEY = "pin_hash";
-
-/** Lock state from the failures already on record (no new attempt). */
-async function currentLockout(ip: string) {
-  const repo = await getRepo();
-  const now = Date.now();
-  return lockoutState(await repo.recentFailures(ip, now - LOCKOUT_LOOKBACK_MS), now);
-}
-
-/**
- * Ruling O: record the attempt as a failure first, then count, then decide whether it may be
- * checked at all. Concurrent requests each see their own record, so a burst cannot get more
- * than LOCKOUT_LIMIT checks: the request whose record is the n-th sees at least n failures.
- * Returns a locked result when the attempt must be refused without checking, else null.
- * A later recordAuthAttempt(ip, true) clears this pending failure.
- */
-async function beginAttempt(ip: string): Promise<AuthResult | null> {
-  const repo = await getRepo();
-  await repo.recordAuthAttempt(ip, false);
-  const now = Date.now();
-  const failures = await repo.recentFailures(ip, now - LOCKOUT_LOOKBACK_MS);
-  const inWindow = failures.filter((t) => t > now - LOCKOUT_WINDOW_MS).length;
-  // Locked by the failures before this attempt (drop one newest entry: this attempt's own).
-  const prior = [...failures].sort((a, b) => a - b).slice(0, -1);
-  if (lockoutState(prior, now).locked || inWindow > LOCKOUT_LIMIT) {
-    return lockedResult(Math.max(lockoutState(failures, now).retryInMs, 1000));
-  }
-  return null;
-}
-
-/** After a checked attempt failed: locked if this failure completed a lockout, else null. */
-async function afterFailure(ip: string): Promise<AuthResult | null> {
-  const lock = await currentLockout(ip);
-  return lock.locked ? lockedResult(lock.retryInMs) : null;
-}
-
-function lockedResult(retryInMs: number): AuthResult {
-  return { ok: false, error: "locked", retryInSeconds: Math.max(1, Math.ceil(retryInMs / 1000)) };
-}
 
 async function startSession(now: number): Promise<void> {
   // Read the secret first so a missing SESSION_SECRET fails loudly before anything is set.

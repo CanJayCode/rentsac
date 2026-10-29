@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Ledger } from "@/components/Ledger";
 import { RoomBadge } from "@/components/RoomBadge";
 import { RoomList, RoomRow } from "@/components/RoomRow";
+import { ShareBill } from "@/components/ShareBill";
 import { StatusChip } from "@/components/StatusChip";
 import { requireSession } from "@/lib/auth/require-session";
 import { cycleText, formatDay } from "@/lib/format";
@@ -11,8 +12,9 @@ import { t, type Locale } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
 import { ledgerRows } from "@/lib/ledger-view";
 import { formatINR } from "@/lib/money";
-import { tenantAccount, tenantBalance, type Balance } from "@/lib/rent";
+import { tenantAccount, tenantBalance, type Account, type Balance } from "@/lib/rent";
 import type { Repo, RepoPayment, Tenant } from "@/lib/repo/types";
+import { billMessage } from "@/lib/share";
 import { deletePayment } from "./actions";
 import { loadRoom } from "./data";
 import { VacatePanel } from "./VacatePanel";
@@ -43,6 +45,7 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
   // A former tenant can still pay what they owe, and a mistaken entry can still be put right.
   const canPay = Boolean(shown && (!shown.leftOn || balances.get(shown.id)!.total > 0));
   const former = tenants.filter((tn) => tn.leftOn && tn.id !== shown?.id && balances.get(tn.id)!.total > 0);
+  const bill = shown && canPay ? billMessages(shown, room.number, account!) : null;
   const justLeft = tenants.find((tn) => tn.id === one(query.left) && tn.leftOn);
 
   return (
@@ -78,6 +81,11 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
             balance={balances.get(shown.id)!}
             payHref={canPay ? `/rooms/${room.number}/pay${tenantQuery ? `?${tenantQuery.slice(0, -1)}` : ""}` : null}
           />
+          {bill ? (
+            <div className="rise" style={{ "--i": 4 } as CSSProperties}>
+              <ShareBill locale={locale} messages={bill} />
+            </div>
+          ) : null}
           <div className="rise mt-1" style={{ "--i": 4 } as CSSProperties}>
             <Ledger
               locale={locale}
@@ -129,6 +137,17 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
       ) : null}
     </div>
   );
+}
+
+/** The tenant's bill in both languages, from the same account figures the page shows. */
+function billMessages(tenant: Tenant, roomNumber: number, account: Account): Record<Locale, string> {
+  const { balance } = account;
+  const who = { name: tenant.name, roomNumber };
+  const pending = { rent: balance.rent, light: balance.light, total: balance.total, advance: balance.credit };
+  return {
+    en: billMessage("en", who, account.charges, pending),
+    mr: billMessage("mr", who, account.charges, pending),
+  };
 }
 
 function RoomHeading({ locale, roomNumber, roomLabel, children }: { locale: Locale; roomNumber: number; roomLabel?: string; children: ReactNode }) {

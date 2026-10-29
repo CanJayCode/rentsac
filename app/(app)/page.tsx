@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
+import { CopyButton } from "@/components/CopyButton";
 import { FilterTabs, parseTab } from "@/components/FilterTabs";
 import { RoomList, RoomRow } from "@/components/RoomRow";
 import { ROOM_STATE_CLASS, RoomsGlance, type RoomState } from "@/components/RoomsGlance";
@@ -12,6 +13,7 @@ import { getLocale } from "@/lib/i18n/server";
 import { formatINR } from "@/lib/money";
 import { homeSummary, type HomeRow } from "@/lib/rent";
 import { getRepo } from "@/lib/repo";
+import { summaryText } from "@/lib/share";
 import { todayIST } from "@/lib/today";
 
 const TOTAL_LABEL: Record<HomeTab, Key> = {
@@ -100,6 +102,19 @@ export default async function Home({ searchParams }: PageProps<"/">) {
           {t(locale, "home.startRound")}
         </ActionLink>
       </div>
+
+      {!empty ? (
+        <div className="rise flex flex-wrap gap-3" style={{ "--i": 2 } as CSSProperties}>
+          <CopyButton
+            text={summaryText(locale, summary)}
+            label={t(locale, "share.copySummary")}
+            copiedLabel={t(locale, "share.copied")}
+            failedLabel={t(locale, "share.copyFailed")}
+            icon={<CopyIcon />}
+            className="w-full"
+          />
+        </div>
+      ) : null}
 
       {empty ? (
         <FirstTenant locale={locale} />
@@ -239,6 +254,15 @@ function RupeeIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M7 5h10M7 9h10M7 5h3.5a4 4 0 0 1 0 8H7l7 6" {...stroke} />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-green">
+      <rect x="8.5" y="8.5" width="11" height="11" rx="2.2" {...stroke} />
+      <path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8" {...stroke} />
     </svg>
   );
 }
