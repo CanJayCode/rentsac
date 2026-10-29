@@ -249,4 +249,18 @@ describe("applyPlan", () => {
     expect(rounds).toHaveLength(8);
     expect(rounds.every((r) => r.status === "done")).toBe(true);
   });
+
+  it("records the imported round ids in the imported_rounds setting, merged and without duplicates", async () => {
+    const repo = createMemoryRepo();
+    const plan = buildPlan(fixture());
+    await repo.setSetting("imported_rounds", JSON.stringify(["older-id"]));
+    await applyPlan(repo, plan);
+    await applyPlan(repo, plan);
+    const ids: string[] = JSON.parse((await repo.getSetting("imported_rounds"))!);
+    const rounds = await repo.listRounds();
+    expect(ids).toContain("older-id");
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const r of rounds) expect(ids).toContain(r.id);
+    expect(ids.length).toBe(rounds.length + 1);
+  });
 });

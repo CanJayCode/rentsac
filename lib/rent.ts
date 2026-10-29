@@ -91,16 +91,15 @@ export async function regenerateRentCharges(repo: Repo, tenant: Tenant, today: s
 
 /**
  * Records the tenant as left on `leftOn` (between move-in and today). Periods that started on or before
- * that day are owed; later rent charges that nothing has been paid against are removed.
+ * that day are owed; later rent charges are removed (money paid against them becomes credit).
  */
 export async function closeTenancy(repo: Repo, tenant: Tenant, leftOn: string, today: string): Promise<void> {
   if (leftOn < tenant.startedOn || leftOn > today) throw new Error("Leave date out of range");
   const charges = await syncRent(repo, { ...tenant, leftOn }, today);
-  const { paidByCharge } = allocate(charges, await livePayments(repo, tenant.id));
+  // Rent for a period that starts after the leave date is never owed, whatever was paid against it.
+  // Money paid toward it then shows as credit.
   for (const c of charges) {
-    if (c.kind === "rent" && c.periodStart && c.periodStart > leftOn && paidByCharge[c.id] === 0) {
-      await repo.deleteCharge(c.id);
-    }
+    if (c.kind === "rent" && c.periodStart && c.periodStart > leftOn) await repo.deleteCharge(c.id);
   }
   await repo.vacateTenant(tenant.id, leftOn);
 }
@@ -169,7 +168,7 @@ export async function homeSummary(
 
   const byRoom = (a: HomeRow, b: HomeRow) => a.roomNumber - b.roomNumber || a.tenantName.localeCompare(b.tenantName);
   const rows = all.filter((x) => x.active).map((x) => x.row).sort(byRoom);
-  const left = all.filter((x) => !x.active && x.row.pendingTotal > 0).map((x) => x.row).sort(byRoom);
+  const left = all.filter((x) => !x.active && (x.row.pendingTotal > 0 || x.row.credit > 0)).map((x) => x.row).sort(byRoom);
   const totalPending = [...rows, ...left].reduce((sum, r) => sum + r.pendingTotal, 0);
   return { totalPending, rows, left };
 }

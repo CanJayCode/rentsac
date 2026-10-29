@@ -212,12 +212,37 @@ describe("closeTenancy", () => {
     });
   });
 
-  it("keeps a later period that has money against it", async () => {
+  it("removes a later period even when money was paid against it; the money becomes credit", async () => {
     const t = await addTenant(13, { startedOn: "2026-09-01" });
     await ensureRentCharges(repo, t, "2026-11-03");
+    // Sep, Oct, Nov exist. 7000 pays Sep, Oct and 1000 of Nov.
     await pay(t, 7000, "2026-09-02");
     await closeTenancy(repo, t, "2026-10-31", "2026-11-03");
-    expect((await repo.listCharges(t.id)).map((c) => c.periodStart).sort()).toEqual(["2026-09-01", "2026-10-01", "2026-11-01"]);
+    expect((await repo.listCharges(t.id)).map((c) => c.periodStart).sort()).toEqual(["2026-09-01", "2026-10-01"]);
+    expect(await tenantBalance(repo, (await repo.getTenant(t.id))!, "2026-11-03")).toEqual({
+      rent: 0, light: 0, total: 0, credit: 1000,
+    });
+  });
+
+  it("a later period paid in full also becomes credit", async () => {
+    const t = await addTenant(13, { startedOn: "2026-09-01" });
+    await ensureRentCharges(repo, t, "2026-11-03");
+    await pay(t, 9000, "2026-09-02");
+    await closeTenancy(repo, t, "2026-10-31", "2026-11-03");
+    expect((await repo.listCharges(t.id)).map((c) => c.periodStart).sort()).toEqual(["2026-09-01", "2026-10-01"]);
+    expect(await tenantBalance(repo, (await repo.getTenant(t.id))!, "2026-11-03")).toEqual({
+      rent: 0, light: 0, total: 0, credit: 3000,
+    });
+  });
+
+  it("lists a former tenant who holds credit under left, without counting it as owed", async () => {
+    const t = await addTenant(13, { startedOn: "2026-09-01" });
+    await ensureRentCharges(repo, t, "2026-11-03");
+    await pay(t, 9000, "2026-09-02");
+    await closeTenancy(repo, t, "2026-10-31", "2026-11-03");
+    const s = await homeSummary(repo, "2026-11-03");
+    expect(s.left.map((r) => [r.roomNumber, r.pendingTotal, r.credit])).toEqual([[13, 0, 3000]]);
+    expect(s.totalPending).toBe(0);
   });
 
   it("rejects a leave date before move-in or after today", async () => {

@@ -1,6 +1,7 @@
 import { checkReading, lightBill } from "./billing";
 import type { Key } from "./i18n";
 import { MAIN_METER_KEYS, type MainMeterKey, type Repo, type RepoCharge, type Round } from "./repo/types";
+import { getImportedRounds } from "./settings";
 import { isRealDate } from "./validate";
 
 /** Meters count whole units; anything above this is a typing slip. */
@@ -122,11 +123,13 @@ export async function loadRound(repo: Repo, roundId: string): Promise<RoundView 
     Promise.all(recentRounds.map((r) => repo.listMainReadings(r.id))),
   ]);
 
+  const imported = (await getImportedRounds(repo)).includes(roundId);
   const charges = new Map<string, { tenantId: string; tenantName: string; charge: RepoCharge }>();
   await Promise.all(
     tenants.map(async (tn) => {
       const c = (await repo.listCharges(tn.id)).find((x) => x.kind === "light" && x.roundId === roundId);
-      if (c) charges.set(tn.roomId, { tenantId: tn.id, tenantName: tn.name, charge: c });
+      // Should a room have two billed tenants in one round, the one living there now wins.
+      if (c && (!charges.has(tn.roomId) || !tn.leftOn)) charges.set(tn.roomId, { tenantId: tn.id, tenantName: tn.name, charge: c });
     }),
   );
   const active = new Map(tenants.filter((tn) => !tn.leftOn).map((tn) => [tn.roomId, tn]));
@@ -180,7 +183,7 @@ export async function loadRound(repo: Repo, roundId: string): Promise<RoundView 
 
   return {
     round,
-    editable: found.all[0].id === roundId,
+    editable: found.all[0].id === roundId && !imported,
     rows,
     main,
     occupied: rows.filter((r) => r.occupied).length,
@@ -205,8 +208,20 @@ async function billRound(
 ): Promise<{ billed: number; skipped: number }> {
   const round = await repo.getRound(roundId);
   if (!round) throw new Error(`Round ${roundId} not found`);
-  const [tenants, readings] = await Promise.all([repo.listTenants({ activeOnly: true }), repo.listReadings(roundId)]);
+  // Imported history is never billed.
+  if ((await getImportedRounds(repo)).includes(roundId)) return { billed: 0, skipped: 0 };
+  const [everyone, readings] = await Promise.all([repo.listTenants(), repo.listReadings(roundId)]);
+  const tenants = everyone.filter((t) => !t.leftOn);
   const byRoom = new Map(readings.map((r) => [r.roomId, r]));
+  // A reading already billed to someone in this room this round is not billed again to a newcomer.
+  const billedTo = new Map<string, Set<string>>();
+  await Promise.all(
+    everyone.map(async (t) => {
+      if ((await repo.listCharges(t.id)).some((c) => c.kind === "light" && c.roundId === roundId)) {
+        billedTo.set(t.roomId, (billedTo.get(t.roomId) ?? new Set()).add(t.id));
+      }
+    }),
+  );
 
   let billed = 0;
   let skipped = 0;
@@ -214,6 +229,10 @@ async function billRound(
   for (const tenant of tenants) {
     if (seen.has(tenant.roomId)) continue;
     seen.add(tenant.roomId);
+    // Moved in after this round: nothing to bill, and nothing missing either.
+    if (tenant.startedOn > round.date) continue;
+    const others = billedTo.get(tenant.roomId);
+    if (others && !others.has(tenant.id)) continue;
     const reading = byRoom.get(tenant.roomId);
     if (!reading) {
       skipped++;
@@ -265,7 +284,7 @@ export async function saveRound(repo: Repo, roundId: string, input: RoundInput, 
 
   const errors: Record<string, Key> = {};
   const rows: { roomId: string; value: number; baseReset: boolean }[] = [];
-  const corrections: { roomId: string; chargeId: string; rate: number }[] = [];
+  const corrections: { roomId: string; chargeId: string; tenantId: string; rate: number }[] = [];
   for (const typed of input.rows) {
     const row = view.rows.find((r) => r.roomId === typed.roomId);
     if (!row || (row.bill && !row.correctable)) continue;
@@ -283,7 +302,7 @@ export async function saveRound(repo: Repo, roundId: string, input: RoundInput, 
       continue;
     }
     rows.push({ roomId: row.roomId, value: parsed.value, baseReset: state.kind === "lower" });
-    if (row.bill) corrections.push({ roomId: row.roomId, chargeId: row.bill.chargeId, rate: row.bill.rate > 0 ? row.bill.rate : rate });
+    if (row.bill) corrections.push({ roomId: row.roomId, chargeId: row.bill.chargeId, tenantId: row.bill.tenantId, rate: row.bill.rate > 0 ? row.bill.rate : rate });
   }
 
   const main: { key: MainMeterKey; value: number }[] = [];
@@ -306,6 +325,13 @@ export async function saveRound(repo: Repo, roundId: string, input: RoundInput, 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   if (rows.length > 0) await repo.saveRoundReadings(roundId, rows);
   if (main.length > 0) await repo.saveMainReadings(roundId, main);
-  for (const c of corrections) await repo.deleteCharge(c.chargeId);
+  for (const c of corrections) {
+    try {
+      await repo.deleteCharge(c.chargeId);
+    } catch (e) {
+      // A double tap: the first one already removed it. Anything else is a real failure.
+      if ((await repo.listCharges(c.tenantId)).some((x) => x.id === c.chargeId)) throw e;
+    }
+  }
   return { ok: true, ...(await billRound(repo, roundId, rate, new Map(corrections.map((c) => [c.roomId, c.rate])))) };
 }

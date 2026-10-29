@@ -1,5 +1,6 @@
 import type ExcelJS from "exceljs";
 import { MAIN_METER_KEYS, type MainMeterKey, type Repo } from "./repo/types";
+import { getImportedRounds } from "./settings";
 
 export type DateSource = "header" | "header-swapped" | "estimated";
 
@@ -318,12 +319,14 @@ export async function applyPlan(repo: Repo, plan: ImportPlan): Promise<{ rounds:
   }
 
   let imported = 0;
+  const importedIds = new Set(await getImportedRounds(repo));
   const existingRounds = await repo.listRounds();
   for (const pr of plan.rounds) {
     const readings = pr.readings.map((r) => ({ roomId: roomIds.get(r.roomNumber)!, value: r.value, baseReset: r.baseReset }));
     const sameDate = existingRounds.filter((r) => r.date === pr.date);
     let reuse: (typeof sameDate)[number] | undefined;
     let identical = false;
+    let identicalId: string | undefined;
     for (const r of sameDate) {
       if (r.status === "open") {
         reuse = r;
@@ -336,15 +339,22 @@ export async function applyPlan(repo: Repo, plan: ImportPlan): Promise<{ rounds:
         pr.main.every((m) => main.some((x) => x.key === m.key && x.value === m.value))
       ) {
         identical = true;
+        identicalId = r.id;
         break;
       }
     }
-    if (identical) continue;
+    if (identical) {
+      importedIds.add(identicalId!);
+      continue;
+    }
     const round = reuse ?? (await repo.createRound(pr.date));
     await repo.saveRoundReadings(round.id, readings);
     await repo.saveMainReadings(round.id, pr.main);
     await repo.finishRound(round.id);
+    importedIds.add(round.id);
     imported++;
   }
+  // Imported rounds stay read-only and are never billed (see loadRound and billRound).
+  await repo.setSetting("imported_rounds", JSON.stringify([...importedIds]));
   return { rounds: imported };
 }

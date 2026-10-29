@@ -404,3 +404,69 @@ describe("getRate", () => {
     }
   });
 });
+
+describe("light billing guards", () => {
+  it("scenario A: a new tenant is not billed for the previous tenant's final reading in the same round", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-28");
+    // Room 3 read and billed to the old tenant; room 5 not read yet, so the round stays open.
+    await saveRound(repo, r.id, { rows: [{ roomId: room(3).id, raw: "1525", confirmed: false }], main: [] }, 10);
+    expect((await light(repo, t3.id)).map((c) => c.amount)).toEqual([230]);
+    await repo.vacateTenant(t3.id, "2026-10-28");
+    const b = await repo.saveTenant({ roomId: room(3).id, name: "B", rentAmount: 3000, cycleStartDay: 1, startedOn: "2026-10-29" });
+    const res = await saveRound(repo, r.id, { rows: [{ roomId: room(5).id, raw: "777", confirmed: false }], main: [] }, 10);
+    expect(res).toMatchObject({ ok: true });
+    expect(await light(repo, b.id)).toEqual([]);
+    expect((await light(repo, t3.id)).length).toBe(1);
+    expect((await repo.listRounds())[0].status).toBe("done");
+    // B is billed in a later round, from the reading the old tenant left.
+    const next = await repo.createRound("2026-11-15");
+    await saveRound(repo, next.id, { rows: [{ roomId: room(3).id, raw: "1545", confirmed: false }], main: [] }, 10);
+    expect((await light(repo, b.id)).map((c) => [c.amount, c.prevReading])).toEqual([[200, 1525]]);
+  });
+
+  it("does not bill a tenant who moved in after the round date, even in an otherwise empty room", async () => {
+    const { repo, room } = await setup();
+    const r = await repo.createRound("2026-10-10");
+    await repo.saveRoundReadings(r.id, [{ roomId: room(8).id, value: 420, baseReset: false }]);
+    const late = await repo.saveTenant({ roomId: room(8).id, name: "Late", rentAmount: 3000, cycleStartDay: 1, startedOn: "2026-10-12" });
+    const res = await finishRound(repo, r.id, 10);
+    expect(await light(repo, late.id)).toEqual([]);
+    expect(res.billed).toBe(0);
+  });
+
+  it("scenario B: an imported newest round is read-only and bills nobody", async () => {
+    const { repo, room, t3 } = await setup();
+    const imp = await repo.createRound("2026-10-15");
+    await repo.saveRoundReadings(imp.id, [{ roomId: room(3).id, value: 1600, baseReset: false }]);
+    await repo.finishRound(imp.id);
+    await repo.setSetting("imported_rounds", JSON.stringify([imp.id]));
+    const view = await loadRound(repo, imp.id);
+    expect(view?.editable).toBe(false);
+    const res = await saveRound(repo, imp.id, { rows: [{ roomId: room(3).id, raw: "1700", confirmed: false }], main: [] }, 10);
+    expect(res).toMatchObject({ ok: false, formError: "readings.error.closed" });
+    expect(await finishRound(repo, imp.id, 10)).toEqual({ billed: 0, skipped: 0 });
+    expect(await light(repo, t3.id)).toEqual([]);
+    // The next real round starts from the imported last reading.
+    const next = await repo.createRound("2026-11-15");
+    const nv = await loadRound(repo, next.id);
+    expect(nv?.rows.find((x) => x.number === 3)?.prev).toBe(1600);
+    await saveRound(repo, next.id, { rows: [{ roomId: room(3).id, raw: "1620", confirmed: false }], main: [] }, 10);
+    expect((await light(repo, t3.id)).map((c) => [c.amount, c.prevReading])).toEqual([[200, 1600]]);
+  });
+
+  it("a double-tapped correction does not throw when the old charge is already gone", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, { rows: [{ roomId: room(3).id, raw: "1525", confirmed: false }], main: [] }, 10);
+    const real = repo.deleteCharge.bind(repo);
+    const racing = { ...repo, deleteCharge: async () => { throw new Error("Charge not found"); } } as Repo;
+    // The charge exists, so a failing delete must surface...
+    await expect(saveRound(racing, r.id, { rows: [{ roomId: room(3).id, raw: "1530", confirmed: false }], main: [] }, 10)).rejects.toThrow();
+    // ...but when the charge is already gone, the correction goes through.
+    const gone = { ...repo, deleteCharge: async (id: string) => { await real(id); throw new Error("Charge not found"); } } as Repo;
+    const res = await saveRound(gone, r.id, { rows: [{ roomId: room(3).id, raw: "1540", confirmed: false }], main: [] }, 10);
+    expect(res).toMatchObject({ ok: true });
+    expect((await light(repo, t3.id)).map((c) => c.amount)).toEqual([380]);
+  });
+});

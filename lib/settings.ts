@@ -21,3 +21,13 @@ export function parseRate(raw: unknown): number | null {
   const n = Number(s);
   return n >= RATE_MIN && n <= RATE_MAX ? n : null;
 }
+
+/** Ids of the reading rounds the Excel import created. They are read-only and never billed. */
+export async function getImportedRounds(repo: Repo): Promise<string[]> {
+  try {
+    const parsed: unknown = JSON.parse((await repo.getSetting("imported_rounds")) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}

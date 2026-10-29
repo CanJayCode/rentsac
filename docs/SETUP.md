@@ -17,7 +17,7 @@ The project already exists: https://awdyxososvvxgsrigurz.supabase.co
    - The **secret** key (also called `service_role`). Do NOT use the publishable (anon) key.
 5. The secret key is a password to all the data. It goes in only two places: the file `.env.local` and Vercel. Never in git, never in a chat, never in an email.
 
-**If the secret key was ever pasted into a chat** (it was pasted into a Claude chat once), treat it as leaked. In Supabase go to Project Settings, API Keys, and rotate (regenerate) the secret key. Then put the new key in `.env.local` and in Vercel (step 3). The old key stops working at once.
+**Keep the secret key private.** Only the publishable key was pasted into a chat earlier, and that one is safe to be public. Still, if the secret key was ever shared anywhere, rotate (regenerate) it in Project Settings, API Keys, then update `.env.local` and Vercel (step 3). The old key stops working at once.
 
 ## 2. Run it on your computer with the real database
 
@@ -57,7 +57,7 @@ The project already exists: https://awdyxososvvxgsrigurz.supabase.co
 
 ## 3. Put it online (Vercel)
 
-1. Log in and link the folder to a Vercel project (accept the defaults):
+1. The repo has a `vercel.json` that puts the app in the Dublin region, next to the Supabase project (eu-west-1), so pages load faster. Log in and link the folder to a Vercel project (accept the defaults):
 
    ```powershell
    vercel login
@@ -125,6 +125,17 @@ Do this BEFORE the first real reading round. The first round bills the units use
    ```
 
 Running it twice is safe; it does not add the same rounds again.
+
+### Enter the tenants who already live there
+
+The import brings in meter readings only. Your father adds each current tenant in the app. For each one:
+
+- Move-in date: enter the START DATE OF THE OLDEST UNPAID RENT PERIOD, not the real move-in day. If the rent is fully paid up to now, enter the start of the CURRENT period.
+- Cycle day: 1, 12 or 26, whichever that tenant's rent period starts on.
+
+The app then charges rent from that date on. Do not enter old unpaid LIGHT dues. They stay on the old sheet and your father keeps handling them from there (in the dry run: room 5 ₹1,390, room 13 ₹2,320, room 14 ₹5,180).
+
+The first real reading round after the import starts a new round. It bills the units used since the last imported reading (the 15 Oct 2026 values). Imported rounds are read-only and never billed.
 
 ## 6. Forgot the PIN, and backups
 
