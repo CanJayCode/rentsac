@@ -1,4 +1,5 @@
-// One-time import of the owner's Excel workbook.
+// One-time import of the meter readings (Sheet3) from the owner's Excel workbook.
+// Only reading rounds are imported: no tenants, no rent, no charges.
 //   npm run import -- <file.xlsx> --dry-run     (default) print the plan, write nothing
 //   npm run import -- <file.xlsx> --apply       write after typing IMPORT
 // For the real database load the env file yourself, e.g.
@@ -30,7 +31,7 @@ async function main() {
   }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const answer = await rl.question(
-    `\nThis writes ${plan.tenants.length} tenants and ${plan.rounds.length} rounds to ${process.env.REPO === "memory" ? "the memory repo" : "the real database"}.\nType IMPORT to continue: `,
+    `\nThis writes ${plan.rounds.length} finished reading rounds to ${process.env.REPO === "memory" ? "the memory repo" : "the real database"}.\nType IMPORT to continue: `,
   );
   rl.close();
   if (answer !== "IMPORT") {
@@ -38,7 +39,7 @@ async function main() {
     process.exit(1);
   }
   const result = await applyPlan(await getRepo(), plan);
-  console.log(`Imported ${result.tenants} tenants, ${result.openingCharges} opening charges, ${result.rounds} rounds.`);
+  console.log(`Imported ${result.rounds} reading rounds (already present rounds were skipped).`);
 }
 
 main().catch((err) => {

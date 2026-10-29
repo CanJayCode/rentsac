@@ -1,72 +1,24 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { applyPlan, buildPlan, formatReport } from "./importer";
+import { applyPlan, buildPlan, formatReport, lastReadings } from "./importer";
 import { createMemoryRepo } from "./repo/memory";
 
-const TODAY = "2026-10-29";
 const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
-
-type Options = { room4Total?: string };
 
 function put(ws: ExcelJS.Worksheet, row: number, cells: Record<string, ExcelJS.CellValue>) {
   for (const [col, value] of Object.entries(cells)) ws.getCell(`${col}${row}`).value = value;
 }
 
-function sheet1(wb: ExcelJS.Workbook) {
-  const ws = wb.addWorksheet("Sheet1");
-  put(ws, 1, { A: "    ..  Room no 12: Akshay" });
-  put(ws, 2, { A: "दिनांक ", B: "चालू रीडिंग ", C: "मागील रीडिंग" });
-  put(ws, 3, { A: "14/04/25", B: 376, C: 311, D: "63 x 10", E: "630 जमा " });
-  put(ws, 4, { A: "15/05/25", B: 446, C: 376, D: "70 x 10", E: 700 });
-  put(ws, 5, { E: 2210 });
-  put(ws, 7, { A: "Room no 5 : Vijay " });
-  put(ws, 9, { A: "15/08/25", B: 425, C: 408, D: "20x10", E: 200 });
-  put(ws, 10, { A: "15/09/25", B: 439, C: 425, D: "20x10", E: 200 });
-  put(ws, 11, { E: "2590रू ", F: "1200 रू जमा " });
-  put(ws, 12, { E: "1390 बिल बाकी " });
-  put(ws, 14, { A: "Room no 13 Gaikwad " });
-  put(ws, 16, { A: "15/10/25", B: 589, C: 554, D: "35 x10", E: 350 });
-  put(ws, 17, { E: "3120 रु ", F: "800 रू जमा " });
-  put(ws, 18, { E: "2320 रू बाकी " });
-  put(ws, 20, { A: "Room no :4 kulkarni " });
-  put(ws, 21, { A: "15/02/26", B: 1053, C: 1012, D: "41x10", E: 410 });
-  put(ws, 23, { A: "Room no 6: ovhal " });
-  put(ws, 24, { A: "15/06/25", B: 535, C: 469, D: "66 x 10", E: 660 });
-  put(ws, 26, { A: "Room no 14 Praveen " });
-  put(ws, 27, { A: "15/04/26", B: 167, C: 124, D: 43, E: 430 });
-  put(ws, 28, { A: "15/05/26", B: 194, C: 167, D: 27, E: 270 });
-  put(ws, 29, { E: "700 बिल बाकी " });
-}
-
-function sheet2(wb: ExcelJS.Workbook, opts: Options) {
-  const ws = wb.addWorksheet("Sheet2");
-  put(ws, 1, { A: "Room no 3: Vaibhav kusekar" });
-  put(ws, 2, { A: "Month", B: "Rent ", C: "Paid" });
-  put(ws, 3, { A: "Jan", B: 3000, C: 3500, D: utc(2025, 1, 19) });
-  put(ws, 4, { A: "feb", B: 3000, C: 2500, D: utc(2025, 2, 15) });
-  put(ws, 5, { A: "Mar", B: 3000 });
-  put(ws, 6, { B: 9000, C: 6000 });
-  put(ws, 8, { A: "Room 5: Vijay " });
-  put(ws, 10, { A: "12/1/25 to11/2/25", B: 3000, C: 3200 });
-  put(ws, 11, { A: "12/2/25 to 11/3/25", B: 3000 });
-  put(ws, 12, { A: "12/3/25 to 11/4/25", B: "3000 बाकी " });
-  put(ws, 13, { A: "12/4/25 to 11/5/25", B: "3000 बाकी " });
-  put(ws, 15, { A: "Room no :4 kulkarni " });
-  put(ws, 17, { A: "26/02/24 to 25/03/24", B: 3000, C: 2000 });
-  put(ws, 18, { A: "26/03/24 to 25/04/24", B: 3000, C: "3000 बाकी " });
-  put(ws, 19, { A: "26/04/24 to 25/05/24", B: 3000, C: "3000 बाकी " });
-  put(ws, 20, { A: "26/05/24 to 25/06/24", B: 3000, C: "3000 बाकी " });
-  put(ws, 21, { B: "                 Total =", C: opts.room4Total ?? "9000 बाकी " });
-  put(ws, 23, { A: "Room no :13 Gaikwad " });
-  put(ws, 24, { A: "01/02/25 to 28/02/25", B: 3000, C: 3300 });
-  put(ws, 25, { A: "01/03/25 to 31/03/25", B: 3000, C: "3000 बाकी " });
-  put(ws, 27, { A: "Room no:14 Praveen ", B: "Rent", C: "paid " });
-  put(ws, 28, { A: "01/12/24 to 31/12/24", B: 3000, C: 3000 });
-  put(ws, 29, { A: "01/01/25 to 31/01/25", B: 3000, C: 3490 });
-  put(ws, 30, { A: "01/02/25 to 28/02/25", B: 3000 });
-  put(ws, 31, { A: "01/03/25 to 31/03/25", B: 3000 });
-  put(ws, 32, { B: 12000, C: 6490 });
-  put(ws, 33, { C: "5510बाकी " });
+// Tenant and rent sheets exist in the real file; the importer must leave them alone.
+function otherSheets(wb: ExcelJS.Workbook) {
+  const s1 = wb.addWorksheet("Sheet1");
+  put(s1, 1, { A: "    ..  Room no 12: Akshay" });
+  put(s1, 3, { A: "14/04/25", B: 376, C: 311, D: "63 x 10", E: "630 जमा " });
+  put(s1, 5, { E: "1390 बिल बाकी " });
+  const s2 = wb.addWorksheet("Sheet2");
+  put(s2, 1, { A: "Room 5: Vijay " });
+  put(s2, 3, { A: "12/1/25 to11/2/25", B: 3000, C: 3200 });
+  put(s2, 4, { A: "12/2/25 to 11/3/25", B: "3000 बाकी " });
 }
 
 const ROUNDS_1 = 6;
@@ -130,109 +82,15 @@ function sheet3(wb: ExcelJS.Workbook) {
   });
 }
 
-function fixture(opts: Options = {}): ExcelJS.Workbook {
+function fixture(): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
-  sheet1(wb);
-  sheet2(wb, opts);
+  otherSheets(wb);
   sheet3(wb);
   return wb;
 }
 
-const tenant = (plan: ReturnType<typeof buildPlan>, room: number) =>
-  plan.tenants.find((t) => t.roomNumber === room)!;
-
-describe("buildPlan: rooms and tenants", () => {
-  const plan = buildPlan(fixture(), { today: TODAY });
-
-  it("lists rooms 1 to 16 and only named tenants", () => {
-    expect(plan.rooms).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
-    expect(plan.tenants.map((t) => [t.roomNumber, t.name])).toEqual([
-      [3, "Vaibhav Kusekar"],
-      [4, "Kulkarni"],
-      [5, "Vijay"],
-      [6, "Ovhal"],
-      [12, "Akshay"],
-      [13, "Gaikwad"],
-      [14, "Praveen"],
-    ]);
-  });
-
-  it("reads the cycle start day from period labels", () => {
-    expect(tenant(plan, 5).cycleStartDay).toBe(12);
-    expect(tenant(plan, 4).cycleStartDay).toBe(26);
-    expect(tenant(plan, 13).cycleStartDay).toBe(1);
-    expect(tenant(plan, 14).cycleStartDay).toBe(1);
-    expect(tenant(plan, 3).cycleStartDay).toBe(1);
-  });
-
-  it("defaults rent and cycle with a warning for tenants without rent data", () => {
-    for (const room of [6, 12]) {
-      expect(tenant(plan, room)).toMatchObject({ rentAmount: 3000, cycleStartDay: 1 });
-    }
-    expect(plan.warnings.join("\n")).toMatch(/rooms? 6, 12.*only in Sheet1/i);
-    expect(tenant(plan, 3).rentAmount).toBe(3000);
-  });
-
-  it("starts each tenant in the rent period that contains the import date", () => {
-    expect(tenant(plan, 5).startedOn).toBe("2026-10-12");
-    expect(tenant(plan, 4).startedOn).toBe("2026-10-26");
-    expect(tenant(plan, 13).startedOn).toBe("2026-10-01");
-    expect(tenant(plan, 12).startedOn).toBe("2026-10-01");
-  });
-
-  it("uses the period before the cycle day when the import date is earlier in the month", () => {
-    const early = buildPlan(fixture(), { today: "2026-10-05" });
-    expect(tenant(early, 5).startedOn).toBe("2026-09-12");
-    expect(tenant(early, 4).startedOn).toBe("2026-09-26");
-  });
-});
-
-describe("buildPlan: opening balances", () => {
-  const plan = buildPlan(fixture(), { today: TODAY });
-
-  it("parses explicit pending notes in Marathi", () => {
-    expect(tenant(plan, 5)).toMatchObject({ openingRent: 6000, openingLight: 1390 });
-    expect(tenant(plan, 13)).toMatchObject({ openingRent: 3000, openingLight: 2320 });
-    expect(tenant(plan, 4).openingRent).toBe(9000);
-    expect(tenant(plan, 14)).toMatchObject({ openingRent: 5510, openingLight: 700 });
-  });
-
-  it("never infers a pending amount from sums", () => {
-    expect(tenant(plan, 12)).toMatchObject({ openingRent: 0, openingLight: 0 });
-    expect(tenant(plan, 6)).toMatchObject({ openingRent: 0, openingLight: 0 });
-    expect(tenant(plan, 3)).toMatchObject({ openingRent: 0, openingLight: 0 });
-    expect(tenant(plan, 4).openingLight).toBe(0);
-    expect(plan.warnings.join("\n")).toMatch(/room 3.*not imported/i);
-  });
-
-  it("records the as-of dates", () => {
-    expect(tenant(plan, 5)).toMatchObject({ openingRentAsOf: "2025-05-11", openingLightAsOf: "2025-09-15" });
-  });
-
-  it("warns when a pending figure is not a multiple of the rent", () => {
-    expect(plan.warnings.join("\n")).toMatch(/room 14.*5510.*multiple/i);
-    expect(plan.warnings.join("\n")).not.toMatch(/room 4.*9000.*multiple/i);
-  });
-
-  it("warns about the months that follow the sheet", () => {
-    const text = plan.warnings.join("\n");
-    expect(text).toMatch(/room 5.*rent.*after 2025-05-11/i);
-    expect(text).toMatch(/room 5.*light.*after 2025-09-15/i);
-  });
-
-  it("warns when a light pending note equals every bill listed", () => {
-    expect(plan.warnings.join("\n")).toMatch(/room 14.*700.*every bill/i);
-  });
-
-  it("flags a stated total that disagrees with the row notes", () => {
-    const bad = buildPlan(fixture({ room4Total: "6000 बाकी " }), { today: TODAY });
-    expect(bad.warnings.join("\n")).toMatch(/room 4.*disagree/i);
-    expect(buildPlan(fixture(), { today: TODAY }).warnings.join("\n")).not.toMatch(/room 4.*disagree/i);
-  });
-});
-
 describe("buildPlan: reading rounds", () => {
-  const plan = buildPlan(fixture(), { today: TODAY });
+  const plan = buildPlan(fixture());
 
   it("lists rounds in column order across both blocks", () => {
     expect(plan.rounds.map((r) => r.date)).toEqual([
@@ -303,48 +161,60 @@ describe("buildPlan: reading rounds", () => {
   });
 });
 
+
+describe("buildPlan: scope and blanks", () => {
+  const plan = buildPlan(fixture());
+
+  it("lists rooms 1 to 16 and nothing about tenants or money", () => {
+    expect(plan.rooms).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+    expect(Object.keys(plan).sort()).toEqual(["rooms", "rounds", "warnings"]);
+    expect(plan.warnings.join("\n")).not.toMatch(/akshay|vijay|rent|बाकी|1390/i);
+  });
+
+  it("warns about blank cells before a first reading and between readings", () => {
+    const text = plan.warnings.join("\n");
+    expect(text).toMatch(/room 8 starts at round 3/i);
+    expect(text).toMatch(/room 9 blank in rounds 3, 4/i);
+  });
+});
+
 describe("report", () => {
-  it("shows tenants, rounds, main meters and warnings", () => {
-    const text = formatReport(buildPlan(fixture(), { today: TODAY }));
-    expect(text).toMatch(/ROOMS AND TENANTS/);
+  const plan = buildPlan(fixture());
+
+  it("shows rounds, last readings per room, main meters and warnings only", () => {
+    const text = formatReport(plan);
     expect(text).toMatch(/ROUNDS/);
+    expect(text).toMatch(/LAST READING PER ROOM/);
     expect(text).toMatch(/MAIN METERS/);
     expect(text).toMatch(/WARNINGS/);
-    expect(text).toMatch(/Vaibhav Kusekar/);
+    expect(text).not.toMatch(/ROOMS AND TENANTS|Opening/);
+    expect(text).toMatch(/^16 +1680 +2025-12-15$/m);
+  });
+
+  it("finds the newest value per room and main meter", () => {
+    const last = lastReadings(plan);
+    expect(last.rooms.get(1)).toEqual({ value: 180, date: "2025-12-15" });
+    expect(last.main.get("motor")).toEqual({ value: 9140, date: "2025-12-15" });
+    expect(last.main.get("inverter")).toEqual({ value: 5600, date: "2025-11-16" });
   });
 });
 
 describe("applyPlan", () => {
-  it("writes tenants, opening balances and finished rounds", async () => {
+  it("writes finished rounds and nothing else", async () => {
     const repo = createMemoryRepo();
-    const plan = buildPlan(fixture(), { today: TODAY });
-    const result = await applyPlan(repo, plan);
-    expect(result).toEqual({ tenants: 7, openingCharges: 7, rounds: 8 });
+    const result = await applyPlan(repo, buildPlan(fixture()));
+    expect(result).toEqual({ rounds: 8 });
 
     const rooms = await repo.listRooms();
     expect(rooms).toHaveLength(16);
-    const tenants = await repo.listTenants();
-    const kulkarni = tenants.find((t) => t.name === "Kulkarni")!;
-    expect(kulkarni).toMatchObject({ rentAmount: 3000, cycleStartDay: 26, startedOn: "2026-10-26" });
-    expect(rooms.find((r) => r.id === kulkarni.roomId)?.number).toBe(4);
-    const charges = await repo.listCharges(kulkarni.id);
-    expect(charges).toHaveLength(1);
-    expect(charges[0]).toMatchObject({ kind: "opening", openingFor: "rent", amount: 9000, dueDate: "2000-01-01" });
-    const vijay = tenants.find((t) => t.name === "Vijay")!;
-    const vijayCharges = await repo.listCharges(vijay.id);
-    expect(vijayCharges.map((c) => [c.openingFor, c.amount]).sort()).toEqual([
-      ["light", 1390],
-      ["rent", 6000],
-    ]);
-    expect(vijayCharges.some((c) => c.kind === "light" || c.kind === "rent")).toBe(false);
+    expect(await repo.listTenants()).toHaveLength(0);
 
     const rounds = await repo.listRounds();
     expect(rounds).toHaveLength(8);
     expect(rounds.every((r) => r.status === "done")).toBe(true);
     const room16 = rooms.find((r) => r.number === 16)!;
     expect(await repo.lastReading(room16.id)).toBe(1680);
-    const newest = rounds[0];
-    expect((await repo.listMainReadings(newest.id)).find((m) => m.key === "motor")?.value).toBe(9140);
+    expect((await repo.listMainReadings(rounds[0].id)).find((m) => m.key === "motor")?.value).toBe(9140);
     const reset = (await repo.listReadings(rounds.find((r) => r.date === "2025-11-02")!.id)).find(
       (r) => r.roomId === room16.id,
     );
@@ -353,31 +223,26 @@ describe("applyPlan", () => {
 
   it("does nothing the second time", async () => {
     const repo = createMemoryRepo();
-    const plan = buildPlan(fixture(), { today: TODAY });
+    const plan = buildPlan(fixture());
     await applyPlan(repo, plan);
     const again = await applyPlan(repo, plan);
-    expect(again).toEqual({ tenants: 0, openingCharges: 0, rounds: 0 });
-    expect(await repo.listTenants()).toHaveLength(7);
+    expect(again).toEqual({ rounds: 0 });
     expect(await repo.listRounds()).toHaveLength(8);
-    for (const t of await repo.listTenants()) {
-      expect((await repo.listCharges(t.id)).length).toBeLessThanOrEqual(2);
-    }
+    expect(await repo.listTenants()).toHaveLength(0);
   });
 
-  it("leaves a room that already has a different tenant alone", async () => {
+  it("creates no charges even when tenants already exist", async () => {
     const repo = createMemoryRepo();
     const room5 = (await repo.listRooms()).find((r) => r.number === 5)!;
-    await repo.saveTenant({ roomId: room5.id, name: "Someone Else", rentAmount: 4000, cycleStartDay: 1, startedOn: "2026-01-01" });
-    const result = await applyPlan(repo, buildPlan(fixture(), { today: TODAY }));
-    expect(result.tenants).toBe(6);
-    const tenants = await repo.listTenants();
-    expect(tenants.filter((t) => t.roomId === room5.id).map((t) => t.name)).toEqual(["Someone Else"]);
-    expect(await repo.listCharges(tenants.find((t) => t.name === "Someone Else")!.id)).toHaveLength(0);
+    const t = await repo.saveTenant({ roomId: room5.id, name: "Someone", rentAmount: 4000, cycleStartDay: 1, startedOn: "2026-01-01" });
+    await applyPlan(repo, buildPlan(fixture()));
+    expect(await repo.listTenants()).toHaveLength(1);
+    expect(await repo.listCharges(t.id)).toHaveLength(0);
   });
 
   it("finishes a half-written round on rerun instead of duplicating it", async () => {
     const repo = createMemoryRepo();
-    const plan = buildPlan(fixture(), { today: TODAY });
+    const plan = buildPlan(fixture());
     await repo.createRound(plan.rounds[0].date);
     await applyPlan(repo, plan);
     const rounds = await repo.listRounds();

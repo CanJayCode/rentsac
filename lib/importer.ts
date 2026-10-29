@@ -1,23 +1,7 @@
 import type ExcelJS from "exceljs";
-import { periodContaining, periodsBetween } from "./cycles";
 import { MAIN_METER_KEYS, type MainMeterKey, type Repo } from "./repo/types";
-import { todayIST } from "./today";
 
 export type DateSource = "header" | "header-swapped" | "estimated";
-
-export type PlanTenant = {
-  roomNumber: number;
-  name: string;
-  rentAmount: number;
-  cycleStartDay: number;
-  startedOn: string;
-  openingRent: number;
-  openingLight: number;
-  /** Last date the sheet covers for each opening figure ("as of"). */
-  openingRentAsOf: string | null;
-  openingLightAsOf: string | null;
-  sources: string[];
-};
 
 export type PlanRound = {
   date: string;
@@ -27,16 +11,12 @@ export type PlanRound = {
 };
 
 export type ImportPlan = {
-  today: string;
   rooms: number[];
-  tenants: PlanTenant[];
   rounds: PlanRound[];
   warnings: string[];
 };
 
 const ROOM_COUNT = 16;
-const DEFAULT_RENT = 3000;
-const OPENING_DUE = "2000-01-01";
 const FIRST_ROUND_GUESS = "2025-07-15";
 const MAX_GAP_DAYS = 62;
 const MAX_COLUMNS = 60;
@@ -69,7 +49,6 @@ function cellOf(ws: ExcelJS.Worksheet, row: number, col: number, ctx: Ctx): Cell
   return null;
 }
 
-const asText = (v: Cell): string | null => (typeof v === "string" ? v : null);
 const asNumber = (v: Cell): number | null =>
   typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v) ? Number(v) : null;
 
@@ -92,190 +71,6 @@ function dayNumber(date: string): number {
   const [y, m, d] = date.split("-").map(Number);
   return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
 }
-
-function shiftDay(date: string, delta: number): string {
-  return new Date((dayNumber(date) + delta) * 86_400_000).toISOString().slice(0, 10);
-}
-
-const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
-
-function lastDayOfMonth(year: number, month: number): string {
-  return iso(year, month, new Date(Date.UTC(year, month, 0)).getUTCDate());
-}
-
-function titleCase(name: string): string {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
-const ROOM_HEADING = /room\s*(?:no\.?)?\s*[:.]?\s*(\d{1,3})\s*[:.\-]?\s*(.*)$/i;
-
-type Block = { room: number; name: string; start: number; end: number };
-
-function findBlocks(ws: ExcelJS.Worksheet, ctx: Ctx): Block[] {
-  const blocks: Block[] = [];
-  for (let r = 1; r <= ws.rowCount; r++) {
-    const text = asText(cellOf(ws, r, 1, ctx));
-    const m = text ? ROOM_HEADING.exec(text) : null;
-    if (!m) continue;
-    const name = titleCase(m[2].replace(/^[\s:.\-]+|[\s:.\-]+$/g, ""));
-    blocks.push({ room: Number(m[1]), name, start: r, end: ws.rowCount });
-  }
-  blocks.forEach((b, i) => {
-    if (i + 1 < blocks.length) b.end = blocks[i + 1].start - 1;
-  });
-  return blocks;
-}
-
-/** "1390 बिल बाकी", "2320 रू बाकी", "5510बाकी": the amount of a pending note, or null. */
-function pendingAmount(text: string): number | null {
-  if (!text.includes("बाकी")) return null;
-  const m = /\d[\d,]*/.exec(text);
-  return m ? Number(m[0].replace(/,/g, "")) : null;
-}
-
-type LightBlock = {
-  room: number;
-  name: string;
-  lastBillDate: string | null;
-  pending: number[];
-  billTotal: number;
-  billCount: number;
-};
-
-function readSheet1(ws: ExcelJS.Worksheet, ctx: Ctx): LightBlock[] {
-  return findBlocks(ws, ctx).map((b) => {
-    const out: LightBlock = { room: b.room, name: b.name, lastBillDate: null, pending: [], billTotal: 0, billCount: 0 };
-    for (let r = b.start + 1; r <= b.end; r++) {
-      const a = asText(cellOf(ws, r, 1, ctx));
-      const date = a ? parseDmy(a) : null;
-      if (date && asNumber(cellOf(ws, r, 2, ctx)) !== null && (!out.lastBillDate || date > out.lastBillDate)) {
-        out.lastBillDate = date;
-      }
-      const bill = cellOf(ws, r, 5, ctx);
-      if (typeof bill === "number" && date) {
-        out.billTotal += bill;
-        out.billCount++;
-      }
-      for (let c = 2; c <= 8; c++) {
-        const note = asText(cellOf(ws, r, c, ctx));
-        const amount = note ? pendingAmount(note) : null;
-        if (amount !== null) out.pending.push(amount);
-      }
-    }
-    return out;
-  });
-}
-
-const MONTH_NAME = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?$/i;
-const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-const PERIOD_LABEL =
-  /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\s*to\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/i;
-
-type RentBlock = {
-  room: number;
-  name: string;
-  rentAmount: number | null;
-  rentVaries: boolean;
-  cycleDay: number | null;
-  cycleMixed: boolean;
-  lastEnd: string | null;
-  rowPending: number[];
-  statedTotal: number | null;
-  totalsRow: { rent: number; paid: number } | null;
-  rowRent: number;
-  rowPaid: number;
-  periodRows: number;
-};
-
-function readSheet2(ws: ExcelJS.Worksheet, ctx: Ctx): RentBlock[] {
-  return findBlocks(ws, ctx).map((b) => {
-    const out: RentBlock = {
-      room: b.room,
-      name: b.name,
-      rentAmount: null,
-      rentVaries: false,
-      cycleDay: null,
-      cycleMixed: false,
-      lastEnd: null,
-      rowPending: [],
-      statedTotal: null,
-      totalsRow: null,
-      rowRent: 0,
-      rowPaid: 0,
-      periodRows: 0,
-    };
-    const startDays: number[] = [];
-    const rents: number[] = [];
-    let monthLabels = false;
-    let year: number | null = null;
-    let lastMonth = 0;
-    for (let r = b.start + 1; r <= b.end; r++) {
-      for (let c = 2; c <= 6; c++) {
-        const v = cellOf(ws, r, c, ctx);
-        if (v instanceof Date && year === null) year = v.getUTCFullYear();
-      }
-    }
-    for (let r = b.start + 1; r <= b.end; r++) {
-      const label = asText(cellOf(ws, r, 1, ctx));
-      const period = label ? PERIOD_LABEL.exec(label) : null;
-      const monthRow = !!label && !period && MONTH_NAME.test(label);
-      const labeled = !!period || monthRow;
-      if (period) {
-        out.periodRows++;
-        startDays.push(Number(period[1]));
-        const y = period[6].length === 2 ? 2000 + Number(period[6]) : Number(period[6]);
-        const end = realIso(y, Number(period[5]), Number(period[4]));
-        if (end && (!out.lastEnd || end > out.lastEnd)) out.lastEnd = end;
-      } else if (monthRow) {
-        out.periodRows++;
-        monthLabels = true;
-        const month = MONTHS.indexOf(label!.slice(0, 3).toLowerCase()) + 1;
-        if (year !== null) {
-          if (lastMonth && month < lastMonth) year++;
-          out.lastEnd = lastDayOfMonth(year, month);
-        }
-        lastMonth = month;
-      }
-      const rent = cellOf(ws, r, 2, ctx);
-      const paid = cellOf(ws, r, 3, ctx);
-      if (labeled) {
-        if (typeof rent === "number") {
-          rents.push(rent);
-          out.rowRent += rent;
-        }
-        if (typeof paid === "number") out.rowPaid += paid;
-      } else if (typeof rent === "number" && typeof paid === "number") {
-        out.totalsRow = { rent, paid };
-      }
-      for (let c = 2; c <= 6; c++) {
-        const note = asText(cellOf(ws, r, c, ctx));
-        const amount = note ? pendingAmount(note) : null;
-        if (amount === null) continue;
-        if (labeled) out.rowPending.push(amount);
-        else out.statedTotal = amount;
-      }
-    }
-    if (rents.length > 0) {
-      out.rentAmount = rents[rents.length - 1];
-      out.rentVaries = new Set(rents).size > 1;
-    }
-    if (startDays.length > 0) {
-      const counts = new Map<number, number>();
-      for (const d of startDays) counts.set(d, (counts.get(d) ?? 0) + 1);
-      out.cycleDay = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
-      out.cycleMixed = counts.size > 1;
-    } else if (monthLabels) {
-      out.cycleDay = 1;
-    }
-    return out;
-  });
-}
-
-const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 function sheetByName(wb: ExcelJS.Workbook, name: string, index: number): ExcelJS.Worksheet | undefined {
   return wb.getWorksheet(name) ?? wb.worksheets[index];
@@ -423,194 +218,52 @@ function readSheet3(ws: ExcelJS.Worksheet, ctx: Ctx): PlanRound[] {
   return rounds;
 }
 
-export function buildPlan(workbook: ExcelJS.Workbook, opts: { today?: string } = {}): ImportPlan {
-  const today = opts.today ?? todayIST();
+
+export function buildPlan(workbook: ExcelJS.Workbook): ImportPlan {
   const ctx: Ctx = { warnings: [] };
-  const warn = (s: string) => ctx.warnings.push(s);
+  const ws = sheetByName(workbook, "Sheet3", 2);
+  const rounds = ws ? readSheet3(ws, ctx) : [];
+  if (!ws) ctx.warnings.push("Sheet3 (readings) not found.");
 
-  const ws1 = sheetByName(workbook, "Sheet1", 0);
-  const ws2 = sheetByName(workbook, "Sheet2", 1);
-  const ws3 = sheetByName(workbook, "Sheet3", 2);
-  if (!ws1) warn("Sheet1 (light bills) not found.");
-  if (!ws2) warn("Sheet2 (rent) not found.");
-  if (!ws3) warn("Sheet3 (readings) not found.");
-
-  const light = new Map<number, LightBlock>();
-  const rent = new Map<number, RentBlock>();
-  for (const b of ws1 ? readSheet1(ws1, ctx) : []) {
-    if (b.room < 1 || b.room > ROOM_COUNT) warn(`Sheet1 block "Room ${b.room}" is outside rooms 1 to ${ROOM_COUNT} and was skipped.`);
-    else {
-      if (light.has(b.room)) warn(`Room ${b.room} has more than one block in Sheet1; the last one is used.`);
-      light.set(b.room, b);
-    }
-  }
-  for (const b of ws2 ? readSheet2(ws2, ctx) : []) {
-    if (b.room < 1 || b.room > ROOM_COUNT) warn(`Sheet2 block "Room ${b.room}" is outside rooms 1 to ${ROOM_COUNT} and was skipped.`);
-    else {
-      if (rent.has(b.room)) warn(`Room ${b.room} has more than one block in Sheet2; the last one is used.`);
-      rent.set(b.room, b);
-    }
-  }
-
-  const rounds = ws3 ? readSheet3(ws3, ctx) : [];
-  const latestRound = rounds.length > 0 ? rounds[rounds.length - 1].date : null;
-
-  const tenants: PlanTenant[] = [];
-  const sheet1Only: number[] = [];
-  const noCycle: number[] = [];
-  const noRent: number[] = [];
-  const roomNumbers = [...new Set([...light.keys(), ...rent.keys()])].sort((a, b) => a - b);
-
-  for (const room of roomNumbers) {
-    const l = light.get(room);
-    const r = rent.get(room);
-    const tag = `Room ${room}`;
-    const name = l?.name || r?.name || "";
-    if (l?.name && r?.name && l.name.toLowerCase() !== r.name.toLowerCase()) {
-      warn(`${tag}: Sheet1 calls the tenant "${l.name}" but Sheet2 "${r.name}"; using "${l.name}".`);
-    }
-    if (!name) {
-      warn(`${tag} has a block without a tenant name and was skipped.`);
+  const leading: string[] = [];
+  const gaps: string[] = [];
+  const never: number[] = [];
+  const rooms = Array.from({ length: ROOM_COUNT }, (_, i) => i + 1);
+  for (const room of rooms) {
+    const has = rounds.map((r) => r.readings.some((x) => x.roomNumber === room));
+    const first = has.indexOf(true);
+    if (first === -1) {
+      if (rounds.length > 0) never.push(room);
       continue;
     }
-
-    const rentAmount = r?.rentAmount ?? DEFAULT_RENT;
-    if (r?.rentAmount == null) noRent.push(room);
-    if (r?.rentVaries) warn(`${tag}: rent differs between rows in Sheet2; using the latest (${rentAmount}).`);
-    const cycleStartDay = r?.cycleDay ?? 1;
-    if (r?.cycleDay == null) noCycle.push(room);
-    if (r?.cycleMixed) warn(`${tag}: period labels in Sheet2 start on different days; using the most common (${cycleStartDay}).`);
-    if (r && !l) warn(`${tag} (${name}) appears only in Sheet2, so there is no light-bill history for it.`);
-    if (l && !r) sheet1Only.push(room);
-
-    const startedOn = periodContaining(cycleStartDay, today).start;
-
-    let openingRent = 0;
-    let openingRentAsOf: string | null = null;
-    if (r) {
-      const rows = sum(r.rowPending);
-      const shortfall = r.totalsRow ? r.totalsRow.rent - r.totalsRow.paid : null;
-      if (r.statedTotal !== null) {
-        openingRent = r.statedTotal;
-        if (r.rowPending.length > 0 && rows !== r.statedTotal) {
-          warn(`${tag}: Sheet2 row notes add up to ${rows} but the stated total is ${r.statedTotal}; the figures disagree, using the stated total.`);
-        } else if (r.rowPending.length === 0) {
-          const derived = shortfall ?? r.rowRent - r.rowPaid;
-          if (derived !== r.statedTotal) {
-            warn(`${tag}: Sheet2 stated total ${r.statedTotal} but rent minus paid is ${derived}; the figures disagree, using the stated total.`);
-          }
-        }
-      } else {
-        openingRent = rows;
-        if (shortfall !== null && shortfall !== rows) {
-          warn(
-            shortfall > 0
-              ? `${tag}: Sheet2 totals show ${shortfall} unpaid rent with no "बाकी" note; not imported.`
-              : `${tag}: Sheet2 totals show rent paid ${-shortfall} above rent due; not imported.`,
-          );
-        }
-      }
-      if (openingRent > 0) {
-        openingRentAsOf = r.lastEnd;
-        if (openingRent % rentAmount !== 0) {
-          warn(`${tag}: pending rent ${openingRent} is not a multiple of the rent ${rentAmount}; it probably includes light bill or extra payments, so please split it.`);
-        }
-      }
-      if (r.lastEnd) {
-        const from = shiftDay(r.lastEnd, 1);
-        const to = shiftDay(startedOn, -1);
-        const gap = from <= to ? periodsBetween(cycleStartDay, from, to).length : 0;
-        if (gap > 0) {
-          warn(`${tag}: rent after ${r.lastEnd} is not in the sheet; ${gap} rent period${gap === 1 ? "" : "s"} up to ${to} are not charged by the import.`);
-        }
-      }
-    }
-
-    let openingLight = 0;
-    let openingLightAsOf: string | null = null;
-    if (l) {
-      openingLight = sum(l.pending);
-      if (l.pending.length > 1) warn(`${tag}: Sheet1 has ${l.pending.length} pending notes (${l.pending.join(", ")}); added together.`);
-      if (openingLight > 0) {
-        openingLightAsOf = l.lastBillDate;
-        if (l.billCount >= 2 && openingLight === l.billTotal) {
-          warn(`${tag}: pending light ${openingLight} equals the total of every bill listed (${l.billCount}), so no payment is recorded; please confirm.`);
-        }
-      }
-      if (l.lastBillDate && latestRound) {
-        const months = monthIndex(latestRound) - monthIndex(l.lastBillDate);
-        if (months >= 1) {
-          warn(`${tag}: light bills after ${l.lastBillDate} are not in the sheet; readings continue to ${latestRound} (about ${months} month${months === 1 ? "" : "s"}) and are not billed by the import.`);
-        }
-      }
-    }
-
-    tenants.push({
-      roomNumber: room,
-      name,
-      rentAmount,
-      cycleStartDay,
-      startedOn,
-      openingRent,
-      openingLight,
-      openingRentAsOf,
-      openingLightAsOf,
-      sources: [l ? "Sheet1" : null, r ? "Sheet2" : null].filter((s): s is string => s !== null),
-    });
+    if (first > 0) leading.push(`room ${room} starts at round ${first + 1}`);
+    const missing = has.map((h, i) => (!h && i > first ? i + 1 : 0)).filter(Boolean);
+    if (missing.length > 0) gaps.push(`room ${room} blank in round${missing.length === 1 ? "" : "s"} ${missing.join(", ")}`);
   }
+  if (never.length > 0) ctx.warnings.push(`No readings at all for room${never.length === 1 ? "" : "s"} ${never.join(", ")}.`);
+  if (leading.length > 0) ctx.warnings.push(`Blank cells before the first reading (vacant or new meter): ${leading.join("; ")}.`);
+  if (gaps.length > 0) ctx.warnings.push(`Blank cells between readings (skipped, the next reading is compared with the last one present): ${gaps.join("; ")}.`);
 
-  if (sheet1Only.length > 0) {
-    const last = sheet1Only
-      .map((n) => light.get(n)?.lastBillDate)
-      .filter((d): d is string => !!d)
-      .sort()
-      .at(-1);
-    warn(
-      `Room${sheet1Only.length === 1 ? "" : "s"} ${sheet1Only.join(", ")} appear${sheet1Only.length === 1 ? "s" : ""} only in Sheet1${last ? ` (last dated ${last})` : ""} with no rent data; please confirm they are still tenants.`,
-    );
-  }
-  if (noRent.length > 0) warn(`Rent defaulted to ${DEFAULT_RENT} for room${noRent.length === 1 ? "" : "s"} ${noRent.join(", ")} (no rent rows in Sheet2).`);
-  if (noCycle.length > 0) warn(`Rent cycle defaulted to day 1 for room${noCycle.length === 1 ? "" : "s"} ${noCycle.join(", ")} (no period labels in Sheet2).`);
-  if (tenants.some((t) => t.openingRent + t.openingLight > 0)) {
-    warn(`Opening balances are only the explicit "बाकी" amounts; rent and light after the "as of" dates are not charged. Each tenant starts in the rent period containing ${today}.`);
-  }
-
-  const rooms = Array.from({ length: ROOM_COUNT }, (_, i) => i + 1);
-  return { today, rooms, tenants, rounds, warnings: ctx.warnings };
+  return { rooms, rounds, warnings: ctx.warnings };
 }
 
-function row(cols: string[], widths: number[]): string {
-  return cols.map((c, i) => c.padEnd(widths[i])).join("  ").trimEnd();
+/** Newest reading per room and per main meter, with the date of the round it came from. */
+export function lastReadings(plan: ImportPlan): {
+  rooms: Map<number, { value: number; date: string }>;
+  main: Map<MainMeterKey, { value: number; date: string }>;
+} {
+  const rooms = new Map<number, { value: number; date: string }>();
+  const main = new Map<MainMeterKey, { value: number; date: string }>();
+  for (const round of plan.rounds) {
+    for (const r of round.readings) rooms.set(r.roomNumber, { value: r.value, date: round.date });
+    for (const m of round.main) main.set(m.key, { value: m.value, date: round.date });
+  }
+  return { rooms, main };
 }
 
 export function formatReport(plan: ImportPlan): string {
   const out: string[] = [];
-  out.push(`RENTSAC IMPORT PLAN (import date ${plan.today})`, "");
-
-  out.push("ROOMS AND TENANTS");
-  const named = new Set(plan.tenants.map((t) => t.roomNumber));
-  const vacant = plan.rooms.filter((n) => !named.has(n));
-  const widths = [4, 18, 6, 5, 18, 19, 14];
-  out.push(row(["Room", "Tenant", "Rent", "Cycle", "Opening rent", "Opening light", "Source"], widths));
-  for (const t of plan.tenants) {
-    out.push(
-      row(
-        [
-          String(t.roomNumber),
-          t.name,
-          String(t.rentAmount),
-          String(t.cycleStartDay),
-          t.openingRent ? `${t.openingRent}${t.openingRentAsOf ? ` (${t.openingRentAsOf})` : ""}` : "-",
-          t.openingLight ? `${t.openingLight}${t.openingLightAsOf ? ` (${t.openingLightAsOf})` : ""}` : "-",
-          t.sources.join("+"),
-        ],
-        widths,
-      ),
-    );
-  }
-  out.push(`Tenants start in the rent period containing ${plan.today}: ${plan.tenants.map((t) => `${t.roomNumber}=${t.startedOn}`).join(", ")}`);
-  out.push(`Rooms 1 to ${plan.rooms.length} (existing); vacant, readings only: ${vacant.join(", ") || "none"}`);
-  out.push("");
+  out.push("RENTSAC IMPORT PLAN (meter readings only; no tenants, no charges)", "");
 
   out.push("ROUNDS");
   const bySource = (s: DateSource) => plan.rounds.filter((r) => r.dateSource === s).length;
@@ -622,13 +275,23 @@ export function formatReport(plan: ImportPlan): string {
   });
   out.push("");
 
-  out.push("MAIN METERS");
-  const keys = MAIN_METER_KEYS.filter((k) => plan.rounds.some((r) => r.main.some((m) => m.key === k)));
-  out.push(
-    keys.length > 0
-      ? keys.map((k) => `${k} (${plan.rounds.filter((r) => r.main.some((m) => m.key === k)).length} rounds)`).join(", ")
-      : "none found",
-  );
+  const last = lastReadings(plan);
+  out.push("LAST READING PER ROOM (seeds the next round)");
+  out.push("Room  Reading  Round date");
+  for (const n of plan.rooms) {
+    const l = last.rooms.get(n);
+    out.push(`${String(n).padEnd(4)}  ${l ? String(l.value).padEnd(7) : "-".padEnd(7)}  ${l?.date ?? "-"}`);
+  }
+  out.push("");
+
+  out.push("MAIN METERS (last value)");
+  const keys = MAIN_METER_KEYS.filter((k) => last.main.has(k));
+  if (keys.length === 0) out.push("none found");
+  for (const k of keys) {
+    const l = last.main.get(k)!;
+    const n = plan.rounds.filter((r) => r.main.some((m) => m.key === k)).length;
+    out.push(`${k.padEnd(12)}  ${String(l.value).padEnd(7)}  ${l.date}  (${n} rounds)`);
+  }
   out.push("");
 
   out.push(`WARNINGS (${plan.warnings.length})`);
@@ -646,46 +309,15 @@ function sameReadings(
   return wanted.every((w) => existing.some((e) => e.roomId === w.roomId && e.value === w.value && e.baseReset === w.baseReset));
 }
 
-export async function applyPlan(
-  repo: Repo,
-  plan: ImportPlan,
-): Promise<{ tenants: number; openingCharges: number; rounds: number }> {
-  const result = { tenants: 0, openingCharges: 0, rounds: 0 };
-
+/** Writes finished rounds with their readings only. Creates no tenants and no charges; safe to run twice. */
+export async function applyPlan(repo: Repo, plan: ImportPlan): Promise<{ rounds: number }> {
   const roomIds = new Map<number, string>();
   for (const room of await repo.listRooms()) roomIds.set(room.number, room.id);
   for (const n of plan.rooms) {
     if (!roomIds.has(n)) roomIds.set(n, (await repo.saveRoom({ number: n })).id);
   }
 
-  const existingTenants = await repo.listTenants();
-  for (const t of plan.tenants) {
-    const roomId = roomIds.get(t.roomNumber)!;
-    const occupant = existingTenants.find((x) => x.roomId === roomId && !x.leftOn);
-    let tenantId: string;
-    if (occupant) {
-      if (occupant.name.trim().toLowerCase() !== t.name.toLowerCase()) continue;
-      tenantId = occupant.id;
-    } else {
-      const saved = await repo.saveTenant({
-        roomId,
-        name: t.name,
-        rentAmount: t.rentAmount,
-        cycleStartDay: t.cycleStartDay,
-        startedOn: t.startedOn,
-      });
-      tenantId = saved.id;
-      result.tenants++;
-    }
-    const have = await repo.listCharges(tenantId);
-    for (const [openingFor, amount] of [["rent", t.openingRent], ["light", t.openingLight]] as const) {
-      if (amount <= 0) continue;
-      if (have.some((c) => c.kind === "opening" && (c.openingFor ?? "rent") === openingFor)) continue;
-      await repo.addCharge({ tenantId, kind: "opening", openingFor, dueDate: OPENING_DUE, amount });
-      result.openingCharges++;
-    }
-  }
-
+  let imported = 0;
   const existingRounds = await repo.listRounds();
   for (const pr of plan.rounds) {
     const readings = pr.readings.map((r) => ({ roomId: roomIds.get(r.roomNumber)!, value: r.value, baseReset: r.baseReset }));
@@ -712,7 +344,7 @@ export async function applyPlan(
     await repo.saveRoundReadings(round.id, readings);
     await repo.saveMainReadings(round.id, pr.main);
     await repo.finishRound(round.id);
-    result.rounds++;
+    imported++;
   }
-  return result;
+  return { rounds: imported };
 }
