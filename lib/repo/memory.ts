@@ -84,6 +84,11 @@ export function createMemoryRepo(): Repo {
       charges.push(created);
       return copy(created);
     },
+    async deleteCharge(id) {
+      const at = charges.findIndex((c) => c.id === id);
+      if (at === -1) throw new Error(`Charge ${id} not found`);
+      charges.splice(at, 1);
+    },
 
     async listPayments(tenantId) {
       return payments.filter((p) => p.tenantId === tenantId).map(copy);

@@ -223,6 +223,10 @@ export function createSupabaseRepo(config: SupabaseRepoConfig = {}): Repo {
       );
     },
 
+    async deleteCharge(id) {
+      await mustOne(db.from("charges").delete().eq("id", id).select("id").maybeSingle(), "Charge", id);
+    },
+
     async listPayments(tenantId) {
       const data = await list(
         db.from("payments").select("*").eq("tenant_id", tenantId).order("created_at").order("id"),

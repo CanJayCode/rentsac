@@ -63,6 +63,11 @@ export interface Repo {
    * Throws when the discriminator is missing (rent without periodStart, light without roundId).
    */
   addCharge(c: Omit<RepoCharge, "id">): Promise<RepoCharge>;
+  /**
+   * Hard delete of one charge (a rent charge created by a wrong cycle, move-in or leave date).
+   * Its dedupe key is free again afterwards. Throws when the id is unknown.
+   */
+  deleteCharge(id: string): Promise<void>;
 
   /** Includes soft-deleted payments (deletedAt set). */
   listPayments(tenantId: string): Promise<RepoPayment[]>;

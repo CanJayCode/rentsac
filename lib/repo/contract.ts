@@ -138,6 +138,21 @@ export function runContract(
       expect(await repo.listCharges(tenantId)).toHaveLength(0);
     });
 
+    it("deleteCharge removes only that charge and frees its dedupe key", async () => {
+      const a = await repo.addCharge(rentCharge(tenantId, "2026-01-01"));
+      const b = await repo.addCharge(rentCharge(tenantId, "2026-02-01"));
+      await repo.deleteCharge(a.id);
+      expect((await repo.listCharges(tenantId)).map((c) => c.id)).toEqual([b.id]);
+      const again = await repo.addCharge(rentCharge(tenantId, "2026-01-01", 4000));
+      expect(again.id).not.toBe(a.id);
+      expect(again.amount).toBe(4000);
+      expect(await repo.listCharges(tenantId)).toHaveLength(2);
+    });
+
+    it("deleteCharge throws for an unknown id", async () => {
+      await expect(repo.deleteCharge(crypto.randomUUID())).rejects.toThrow();
+    });
+
     it("addPayment with the same idemKey stores one payment", async () => {
       const a = await repo.addPayment(payment(tenantId, 1000), "key-1");
       const b = await repo.addPayment(payment(tenantId, 1000), "key-1");

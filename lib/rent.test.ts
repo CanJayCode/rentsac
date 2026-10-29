@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createMemoryRepo } from "./repo/memory";
 import type { Repo, Room, Tenant } from "./repo/types";
-import { ensureRentCharges, homeSummary } from "./rent";
+import { closeTenancy, ensureRentCharges, homeSummary, regenerateRentCharges, rentPreview, rentTermsEditable, tenantBalance } from "./rent";
 
 let repo: Repo;
 let rooms: Room[];
@@ -157,5 +157,94 @@ describe("homeSummary", () => {
     const s = await homeSummary(repo, "2026-10-28");
     expect(s.left).toEqual([]);
     expect(s.totalPending).toBe(0);
+  });
+});
+
+describe("ensureRentCharges with day 31", () => {
+  it("clamps the cycle start to the month's last day", async () => {
+    const t = await addTenant(11, { cycleStartDay: 31, startedOn: "2026-01-31" });
+    await ensureRentCharges(repo, t, "2026-04-05");
+    expect((await repo.listCharges(t.id)).map((c) => c.periodStart).sort()).toEqual([
+      "2026-01-31",
+      "2026-02-28",
+      "2026-03-31",
+    ]);
+  });
+});
+
+describe("regenerateRentCharges", () => {
+  it("replaces charges after a cycle and move-in correction and keeps the opening balance", async () => {
+    const t = await addTenant(3, { cycleStartDay: 1, startedOn: "2026-06-01" });
+    await repo.addCharge({ tenantId: t.id, kind: "opening", openingFor: "light", dueDate: "2026-05-20", amount: 400 });
+    await ensureRentCharges(repo, t, "2026-10-28");
+    const fixed = await repo.saveTenant({ ...t, cycleStartDay: 26, startedOn: "2026-09-26" });
+    await regenerateRentCharges(repo, fixed, "2026-10-28");
+    const charges = await repo.listCharges(t.id);
+    expect(charges.filter((c) => c.kind === "rent").map((c) => c.periodStart).sort()).toEqual(["2026-09-26", "2026-10-26"]);
+    expect(charges.filter((c) => c.kind === "opening")).toHaveLength(1);
+  });
+
+  it("refuses once a payment exists, and rentTermsEditable says so", async () => {
+    const t = await addTenant(3, { startedOn: "2026-09-01" });
+    await ensureRentCharges(repo, t, "2026-10-28");
+    expect(await rentTermsEditable(repo, t.id)).toBe(true);
+    const p = await pay(t, 1000);
+    expect(await rentTermsEditable(repo, t.id)).toBe(false);
+    await expect(regenerateRentCharges(repo, { ...t, cycleStartDay: 12 }, "2026-10-28")).rejects.toThrow();
+    expect((await repo.listCharges(t.id)).map((c) => c.periodStart).sort()).toEqual(["2026-09-01", "2026-10-01"]);
+    await repo.deletePayment(p.id);
+    expect(await rentTermsEditable(repo, t.id)).toBe(true);
+  });
+});
+
+describe("closeTenancy", () => {
+  it("removes unpaid periods after the leave date and keeps a paid one", async () => {
+    const t = await addTenant(13, { startedOn: "2026-08-01" });
+    await ensureRentCharges(repo, t, "2026-11-03");
+    // Aug, Sep, Oct, Nov exist. 4000 pays Aug and 1000 of Sep.
+    await pay(t, 4000, "2026-08-02");
+    await closeTenancy(repo, t, "2026-09-30", "2026-11-03");
+    const rent = (await repo.listCharges(t.id)).map((c) => c.periodStart).sort();
+    expect(rent).toEqual(["2026-08-01", "2026-09-01"]);
+    expect((await repo.getTenant(t.id))?.leftOn).toBe("2026-09-30");
+    expect(await tenantBalance(repo, (await repo.getTenant(t.id))!, "2026-11-03")).toEqual({
+      rent: 2000, light: 0, total: 2000, credit: 0,
+    });
+  });
+
+  it("keeps a later period that has money against it", async () => {
+    const t = await addTenant(13, { startedOn: "2026-09-01" });
+    await ensureRentCharges(repo, t, "2026-11-03");
+    await pay(t, 7000, "2026-09-02");
+    await closeTenancy(repo, t, "2026-10-31", "2026-11-03");
+    expect((await repo.listCharges(t.id)).map((c) => c.periodStart).sort()).toEqual(["2026-09-01", "2026-10-01", "2026-11-01"]);
+  });
+
+  it("rejects a leave date before move-in or after today", async () => {
+    const t = await addTenant(13, { startedOn: "2026-09-01" });
+    await expect(closeTenancy(repo, t, "2026-08-31", "2026-10-28")).rejects.toThrow();
+    await expect(closeTenancy(repo, t, "2026-10-29", "2026-10-28")).rejects.toThrow();
+    expect((await repo.getTenant(t.id))?.leftOn).toBeFalsy();
+  });
+});
+
+describe("tenantBalance", () => {
+  it("brings rent up to date and reports pending and credit", async () => {
+    const t = await addTenant(2, { startedOn: "2026-10-01" });
+    await repo.addCharge({ tenantId: t.id, kind: "light", roundId: "round-1", dueDate: "2026-10-15", amount: 420 });
+    await pay(t, 3000, "2026-10-02", "light");
+    expect(await tenantBalance(repo, t, "2026-10-28")).toEqual({ rent: 3000, light: 0, total: 3000, credit: 2580 });
+  });
+});
+
+describe("rentPreview", () => {
+  it("names the first period and counts periods due", () => {
+    expect(rentPreview({ cycleStartDay: 26, startedOn: "2026-10-10", rentAmount: 3000 }, "2026-10-28")).toEqual({
+      first: { start: "2026-09-26", end: "2026-10-25" },
+      amount: 3000,
+      dueCount: 2,
+    });
+    expect(rentPreview({ cycleStartDay: 1, startedOn: "2026-11-05", rentAmount: 3000 }, "2026-10-28").dueCount).toBe(0);
+    expect(rentPreview({ cycleStartDay: 1, startedOn: "2025-10-28", rentAmount: 3000 }, "2026-10-28").dueCount).toBe(13);
   });
 });

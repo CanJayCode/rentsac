@@ -1,4 +1,4 @@
-import { periodContaining, periodsBetween } from "./cycles";
+import { periodContaining, periodsBetween, type Period } from "./cycles";
 import { allocate, pending } from "./ledger";
 import type { Repo, RepoCharge, Tenant } from "./repo/types";
 
@@ -62,9 +62,62 @@ export async function ensureRentCharges(repo: Repo, tenant: Tenant, today: strin
 }
 
 async function balanceFrom(repo: Repo, tenantId: string, charges: RepoCharge[]): Promise<Balance> {
-  const payments = (await repo.listPayments(tenantId)).filter((p) => !p.deletedAt);
-  const { paidByCharge, credit } = allocate(charges, payments);
+  const { paidByCharge, credit } = allocate(charges, await livePayments(repo, tenantId));
   return { ...pending(charges, paidByCharge), credit };
+}
+
+async function livePayments(repo: Repo, tenantId: string) {
+  return (await repo.listPayments(tenantId)).filter((p) => !p.deletedAt);
+}
+
+/** Cycle day and move-in date may change only while nothing has been paid against them. */
+export async function rentTermsEditable(repo: Repo, tenantId: string): Promise<boolean> {
+  return (await livePayments(repo, tenantId)).length === 0;
+}
+
+/**
+ * After a corrected cycle day or move-in date: drops every generated rent charge and creates them
+ * again from the tenant as saved. Opening balances stay. Refuses once a payment exists.
+ */
+export async function regenerateRentCharges(repo: Repo, tenant: Tenant, today: string): Promise<void> {
+  if (!(await rentTermsEditable(repo, tenant.id))) {
+    throw new Error("Rent terms are fixed once a payment has been recorded");
+  }
+  for (const c of await repo.listCharges(tenant.id)) {
+    if (c.kind === "rent" && c.periodStart) await repo.deleteCharge(c.id);
+  }
+  await ensureRentCharges(repo, tenant, today);
+}
+
+/**
+ * Records the tenant as left on `leftOn` (between move-in and today). Periods that started on or before
+ * that day are owed; later rent charges that nothing has been paid against are removed.
+ */
+export async function closeTenancy(repo: Repo, tenant: Tenant, leftOn: string, today: string): Promise<void> {
+  if (leftOn < tenant.startedOn || leftOn > today) throw new Error("Leave date out of range");
+  const charges = await syncRent(repo, { ...tenant, leftOn }, today);
+  const { paidByCharge } = allocate(charges, await livePayments(repo, tenant.id));
+  for (const c of charges) {
+    if (c.kind === "rent" && c.periodStart && c.periodStart > leftOn && paidByCharge[c.id] === 0) {
+      await repo.deleteCharge(c.id);
+    }
+  }
+  await repo.vacateTenant(tenant.id, leftOn);
+}
+
+/** Above this many periods due at once, saving a tenant needs an explicit confirmation. */
+export const MONTHS_CONFIRM_ABOVE = 2;
+
+export type RentPreview = { first: Period; amount: number; dueCount: number };
+
+/** What saving these terms would charge: the first period, and how many periods are already due today. */
+export function rentPreview(
+  terms: { cycleStartDay: number; startedOn: string; rentAmount: number },
+  today: string,
+): RentPreview {
+  const first = periodContaining(terms.cycleStartDay, terms.startedOn);
+  const dueCount = terms.startedOn > today ? 0 : periodsBetween(terms.cycleStartDay, first.start, today).length;
+  return { first, amount: terms.rentAmount, dueCount };
 }
 
 /** Pending rent and light and advance credit for one tenant, after bringing rent charges up to date. */
