@@ -12,10 +12,12 @@ type Props = {
   tenant: { id: string; name: string; startedOn: string };
   balance: number;
   today: string;
+  /** The room has a reading in the latest round, so the last light bill can be right. */
+  readingTaken: boolean;
 };
 
 /** "Tenant is leaving" with a confirm step: leave date, balance warning and the final-reading reminder. */
-export function VacatePanel({ locale, tenant, balance, today }: Props) {
+export function VacatePanel({ locale, tenant, balance, today, readingTaken }: Props) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(vacateTenant, {});
 
@@ -41,10 +43,12 @@ export function VacatePanel({ locale, tenant, balance, today }: Props) {
           ? t(locale, "roomPage.vacateBalance", { name: tenant.name, amount: formatINR(balance) })
           : t(locale, "roomPage.vacateClear")}
       </p>
-      <p className="mt-3 flex gap-3 px-1 text-base leading-snug text-ink/80">
+      <p
+        className={`mt-3 flex gap-3 text-base leading-snug ${readingTaken ? "px-1 text-ink/80" : "rounded-2xl bg-amber-soft px-4 py-3 font-medium text-amber-deep"}`}
+      >
         <MeterGlyph />
         <span>
-          {t(locale, "roomPage.finalReading")}{" "}
+          {t(locale, readingTaken ? "roomPage.finalReading" : "roomPage.finalReadingFirst")}{" "}
           <Link href="/readings" className="font-semibold text-green underline decoration-green/40 underline-offset-4">
             {t(locale, "roomPage.finalReadingLink")}
           </Link>

@@ -3,9 +3,7 @@
 import { MeterRow } from "@/components/MeterRow";
 import { t, type Key, type Locale } from "@/lib/i18n";
 import type { MainMeterKey } from "@/lib/repo/types";
-import { parseReading, rowState, type MainRow } from "@/lib/rounds";
-
-type Note = { line: string | null; tone: "plain" | "money" | "quiet"; warn: string | null; error: Key | null };
+import { parseReading, rowState, type MainRow, type Note } from "@/lib/rounds";
 
 const LABEL: Record<MainMeterKey, Key> = {
   block_1_4: "readings.meter.block_1_4",

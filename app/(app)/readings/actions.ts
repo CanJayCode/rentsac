@@ -6,12 +6,11 @@ import { assertSessionAction } from "@/lib/auth/require-session";
 import type { Key } from "@/lib/i18n";
 import { getRepo } from "@/lib/repo";
 import { MAIN_METER_KEYS, type MainMeterKey } from "@/lib/repo/types";
-import { saveRound, validateRoundDate, type RoundInput } from "@/lib/rounds";
+import { saveRound, validateRoundDate, type RoundInput, type RoundState } from "@/lib/rounds";
 import { getRate } from "@/lib/settings";
 import { todayIST } from "@/lib/today";
 
 export type StartState = { error?: Key; date?: string };
-export type RoundState = { errors?: Record<string, Key>; formError?: Key };
 
 function field(data: FormData, name: string): string {
   const v = data.get(name);

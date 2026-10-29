@@ -12,12 +12,18 @@ import { getLocale } from "@/lib/i18n/server";
 import { ledgerRows } from "@/lib/ledger-view";
 import { formatINR } from "@/lib/money";
 import { tenantAccount, tenantBalance, type Balance } from "@/lib/rent";
-import type { RepoPayment, Tenant } from "@/lib/repo/types";
+import type { Repo, RepoPayment, Tenant } from "@/lib/repo/types";
 import { deletePayment } from "./actions";
 import { loadRoom } from "./data";
 import { VacatePanel } from "./VacatePanel";
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+/** Whether the room has a reading in the latest round (for the final reading before a tenant leaves). */
+async function hasLatestReading(repo: Repo, roomId: string): Promise<boolean> {
+  const [latest] = await repo.listRounds();
+  return Boolean(latest && (await repo.listReadings(latest.id)).some((r) => r.roomId === roomId));
+}
 
 export default async function RoomPage({ params, searchParams }: PageProps<"/rooms/[room]">) {
   await requireSession();
@@ -112,7 +118,13 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
 
       {shown && !shown.leftOn ? (
         <div className="rise mt-2" style={{ "--i": 5 } as CSSProperties}>
-          <VacatePanel locale={locale} tenant={shown} balance={balances.get(shown.id)!.total} today={today} />
+          <VacatePanel
+            locale={locale}
+            tenant={shown}
+            balance={balances.get(shown.id)!.total}
+            today={today}
+            readingTaken={await hasLatestReading(repo, room.id)}
+          />
         </div>
       ) : null}
     </div>

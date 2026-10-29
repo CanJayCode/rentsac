@@ -31,12 +31,14 @@ type Props = {
     onEnter: (el: HTMLInputElement) => void;
   };
   shown?: string;
+  /** A small action beside the line, such as "Correct" on a billed reading. */
+  action?: ReactNode;
 };
 
 const LINE_TONE = { plain: "text-ink/75", money: "font-semibold text-green-deep", quiet: "text-ink/55" } as const;
 
 /** One meter in a round: who it belongs to, its last reading, a big box for the new one and what it comes to. */
-export function MeterRow({ id, badge, title, muted, sub, inputLabel, line, lineTone = "plain", warn, error, fixLabel, confirmLabel, index = 0, input, shown }: Props) {
+export function MeterRow({ id, badge, title, muted, sub, inputLabel, line, lineTone = "plain", warn, error, fixLabel, confirmLabel, index = 0, input, shown, action }: Props) {
   const ref = useRef<HTMLInputElement>(null);
   const filled = Boolean(input?.value);
 
@@ -102,7 +104,7 @@ export function MeterRow({ id, badge, title, muted, sub, inputLabel, line, lineT
         )}
       </div>
 
-      {line || warn || error ? (
+      {line || warn || error || action ? (
         <div id={`${id}-note`} className="pl-[3.875rem]" aria-live="polite">
           {warn ? (
             <>
@@ -123,9 +125,14 @@ export function MeterRow({ id, badge, title, muted, sub, inputLabel, line, lineT
                   {confirmLabel}
                 </button>
               </div>
+              {action ? <div className="mt-1 flex justify-end">{action}</div> : null}
             </>
-          ) : line ? (
-            <p className={`mt-1.5 text-[0.9375rem] leading-snug tabular-nums ${LINE_TONE[lineTone]}`}>{line}</p>
+          ) : line || action ? (
+            // A long line pushes the action onto its own line, at the right.
+            <div className="mt-1 flex min-h-6 flex-wrap items-center justify-between gap-x-2">
+              <p className={`min-w-0 text-[0.9375rem] leading-snug tabular-nums ${LINE_TONE[lineTone]}`}>{line}</p>
+              {action ? <div className="ml-auto">{action}</div> : null}
+            </div>
           ) : null}
           {error && !warn ? (
             <p className="mt-1.5 text-[0.9375rem] leading-snug font-medium text-amber" role="alert">

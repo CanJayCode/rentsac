@@ -4,11 +4,9 @@ import { useActionState, useRef, useState, type FormEvent } from "react";
 import { MainMeters, mainNote } from "@/components/MainMeters";
 import { MeterRow } from "@/components/MeterRow";
 import { RoomBadge } from "@/components/RoomBadge";
-import { t, type Key, type Locale } from "@/lib/i18n";
+import { t, type Locale } from "@/lib/i18n";
 import { formatINR } from "@/lib/money";
-import { parseReading, rowState, type MainRow, type RoundRow } from "@/lib/rounds";
-
-export type RoundState = { errors?: Record<string, Key>; formError?: Key };
+import { parseReading, rowState, type MainRow, type Note, type RoundRow, type RoundState } from "@/lib/rounds";
 
 type Props = {
   locale: Locale;
@@ -20,16 +18,19 @@ type Props = {
   action: (prev: RoundState, data: FormData) => Promise<RoundState>;
 };
 
-type Note = { line: string | null; tone: "plain" | "money" | "quiet"; warn: string | null; error: Key | null };
-
 const mainId = (key: string) => `main:${key}`;
 
-/** What one room's row says: the live bill, a first reading, or a warning still to confirm. */
-export function roomNote(locale: Locale, row: RoundRow, raw: string, confirmed: boolean, rate: number): Note {
+/**
+ * What one room's row says: the live bill, a first reading, or a warning still to confirm. A billed row
+ * shows its bill, unless it is being corrected: then the new value is worked out at the rate it was billed at.
+ */
+export function roomNote(locale: Locale, row: RoundRow, raw: string, confirmed: boolean, currentRate: number, correcting = false): Note {
   const none: Note = { line: null, tone: "plain", warn: null, error: null };
-  if (row.bill) return billedNote(locale, row);
+  if (row.bill && !correcting) return billedNote(locale, row);
   const parsed = parseReading(raw);
   if (!parsed.ok) return { ...none, error: parsed.error };
+  if (row.bill && (parsed.value === null || parsed.value === row.saved)) return billedNote(locale, row);
+  const rate = row.bill && row.bill.rate > 0 ? row.bill.rate : currentRate;
   const state = rowState(row.prev, parsed.value, row.recent);
   const bill = (units: number): Note =>
     row.occupied
@@ -90,6 +91,8 @@ export function RoundEntry({ locale, roundId, rate, editable, rows, main, action
   const [seen, setSeen] = useState(state);
   const [cleared, setCleared] = useState<Set<string>>(new Set());
   const [blocked, setBlocked] = useState(false);
+  // Billed rows opened again for a correction.
+  const [correcting, setCorrecting] = useState<Set<string>>(new Set());
   const formRef = useRef<HTMLFormElement>(null);
   if (seen !== state) {
     setSeen(state);
@@ -106,11 +109,29 @@ export function RoundEntry({ locale, roundId, rate, editable, rows, main, action
     setCleared((x) => new Set(x).add(id));
     setBlocked(false);
   };
+  const startCorrecting = (id: string) => {
+    setCorrecting((x) => new Set(x).add(id));
+    requestAnimationFrame(() => {
+      const box = document.getElementById(`reading-${id}`);
+      if (box instanceof HTMLInputElement) {
+        box.focus();
+        box.select();
+      }
+    });
+  };
+  const keepBilled = (row: RoundRow) => {
+    setCorrecting((x) => {
+      const next = new Set(x);
+      next.delete(row.roomId);
+      return next;
+    });
+    set(row.roomId, row.saved === null ? "" : String(row.saved));
+  };
   const isConfirmed = (id: string) => values[id] !== "" && confirmed[id] === values[id];
   const serverError = (id: string) => (cleared.has(id) ? null : (state.errors?.[id] ?? null));
 
   const roomNotes = rows.map((r) =>
-    editable ? roomNote(locale, r, values[r.roomId], isConfirmed(r.roomId), rate) : billedNote(locale, r),
+    editable ? roomNote(locale, r, values[r.roomId], isConfirmed(r.roomId), rate, correcting.has(r.roomId)) : billedNote(locale, r),
   );
   const mainNotes = main.map((m) => mainNote(locale, m, values[mainId(m.key)], isConfirmed(mainId(m.key))));
   const roomsDone = rows.filter((r) => r.bill || values[r.roomId] !== "").length;
@@ -144,7 +165,7 @@ export function RoundEntry({ locale, roundId, rate, editable, rows, main, action
     requestAnimationFrame(() => formRef.current?.querySelector(`[data-row="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
   }
 
-  const lastRoom = rows.findLastIndex((r) => !r.bill);
+  const lastRoom = rows.findLastIndex((r) => !r.bill || correcting.has(r.roomId));
   const formError = blocked ? "readings.error.rows" : state.formError;
 
   return (
@@ -182,8 +203,10 @@ export function RoundEntry({ locale, roundId, rate, editable, rows, main, action
         <ul className="divide-y divide-line overflow-hidden rounded-card bg-card shadow-soft">
           {rows.map((r, i) => {
             const note = roomNotes[i];
-            const locked = !editable || Boolean(r.bill);
+            const isCorrecting = correcting.has(r.roomId);
+            const locked = !editable || (Boolean(r.bill) && !isCorrecting);
             const err = note.error ?? serverError(r.roomId);
+            const canCorrect = editable && Boolean(r.bill) && r.correctable;
             return (
               <MeterRow
                 key={r.roomId}
@@ -201,6 +224,18 @@ export function RoundEntry({ locale, roundId, rate, editable, rows, main, action
                 fixLabel={t(locale, "readings.fix")}
                 confirmLabel={t(locale, "readings.confirm")}
                 shown={r.saved === null ? "" : String(r.saved)}
+                action={
+                  canCorrect ? (
+                    <button
+                      type="button"
+                      onClick={() => (isCorrecting ? keepBilled(r) : startCorrecting(r.roomId))}
+                      aria-label={isCorrecting ? undefined : t(locale, "readings.correctLabel", { n: r.number })}
+                      className="press deva-nudge -mr-2 inline-flex min-h-11 flex-none items-center rounded-full px-3 text-base font-semibold text-green outline-none active:bg-green/10 focus-visible:ring-2 focus-visible:ring-green"
+                    >
+                      {t(locale, isCorrecting ? "readings.keep" : "readings.correct")}
+                    </button>
+                  ) : null
+                }
                 input={
                   locked
                     ? undefined

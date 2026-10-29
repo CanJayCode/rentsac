@@ -76,8 +76,16 @@ export type RoundRow = {
   recent: number[];
   saved: number | null;
   baseReset: boolean;
-  bill: { amount: number; units: number; rate: number; prevReading?: number } | null;
+  bill: { chargeId: string; tenantId: string; amount: number; units: number; rate: number; prevReading?: number } | null;
+  /** A billed reading in the newest round can be corrected while the billed tenant still lives there. */
+  correctable: boolean;
 };
+
+/** What a row's line says under it: the live bill or meaning, an unconfirmed warning, or an input error. */
+export type Note = { line: string | null; tone: "plain" | "money" | "quiet"; warn: string | null; error: Key | null };
+
+/** What the round form gets back from a save that did not go through. */
+export type RoundState = { errors?: Record<string, Key>; formError?: Key };
 
 export type MainRow = { key: MainMeterKey; last: number | null; recent: number[]; saved: number | null };
 
@@ -114,11 +122,11 @@ export async function loadRound(repo: Repo, roundId: string): Promise<RoundView 
     Promise.all(recentRounds.map((r) => repo.listMainReadings(r.id))),
   ]);
 
-  const charges = new Map<string, { tenantName: string; charge: RepoCharge }>();
+  const charges = new Map<string, { tenantId: string; tenantName: string; charge: RepoCharge }>();
   await Promise.all(
     tenants.map(async (tn) => {
       const c = (await repo.listCharges(tn.id)).find((x) => x.kind === "light" && x.roundId === roundId);
-      if (c) charges.set(tn.roomId, { tenantName: tn.name, charge: c });
+      if (c) charges.set(tn.roomId, { tenantId: tn.id, tenantName: tn.name, charge: c });
     }),
   );
   const active = new Map(tenants.filter((tn) => !tn.leftOn).map((tn) => [tn.roomId, tn]));
@@ -142,12 +150,15 @@ export async function loadRound(repo: Repo, roundId: string): Promise<RoundView 
           baseReset: saved?.baseReset ?? false,
           bill: billed
             ? {
+                chargeId: billed.charge.id,
+                tenantId: billed.tenantId,
                 amount: billed.charge.amount,
                 units: billed.charge.units ?? 0,
                 rate: billed.charge.rate ?? 0,
                 ...(billed.charge.prevReading != null ? { prevReading: billed.charge.prevReading } : {}),
               }
             : null,
+          correctable: Boolean(billed) && active.get(room.id)?.id === billed?.tenantId,
         };
       }),
   );
@@ -182,6 +193,16 @@ export async function loadRound(repo: Repo, roundId: string): Promise<RoundView 
  * repeat: a room already billed keeps its charge as it was. The round is done once no room is skipped.
  */
 export async function finishRound(repo: Repo, roundId: string, rate: number): Promise<{ billed: number; skipped: number }> {
+  return billRound(repo, roundId, rate, new Map());
+}
+
+/** finishRound, with a rate per room for re-bills of corrected readings (each keeps its first rate). */
+async function billRound(
+  repo: Repo,
+  roundId: string,
+  rate: number,
+  rateFor: Map<string, number>,
+): Promise<{ billed: number; skipped: number }> {
   const round = await repo.getRound(roundId);
   if (!round) throw new Error(`Round ${roundId} not found`);
   const [tenants, readings] = await Promise.all([repo.listTenants({ activeOnly: true }), repo.listReadings(roundId)]);
@@ -199,16 +220,17 @@ export async function finishRound(repo: Repo, roundId: string, rate: number): Pr
       continue;
     }
     const prev = await repo.lastReading(tenant.roomId, roundId);
+    const roomRate = rateFor.get(tenant.roomId) ?? rate;
     const bill = reading.baseReset
       ? { amount: 0, units: 0, ...(prev !== null ? { prevReading: prev } : {}) }
-      : billFor(prev, reading.value, rate);
+      : billFor(prev, reading.value, roomRate);
     // Deduped on tenant + round: a repeat returns the charge first made, with its own rate.
     await repo.addCharge({
       tenantId: tenant.id,
       kind: "light",
       dueDate: round.date,
       roundId,
-      rate,
+      rate: roomRate,
       currReading: reading.value,
       ...bill,
     });
@@ -232,8 +254,10 @@ const needsConfirm = (s: RowState) => s.kind === "lower" || s.kind === "high";
 
 /**
  * Checks and stores what was typed, then bills. Empty rows stay unread; a lower or unusually high value
- * must come confirmed (a confirmed lower one restarts the meter's base). A room already billed in this
- * round keeps the reading it was billed on. Nothing is stored when any row is wrong. Safe to repeat.
+ * must come confirmed (a confirmed lower one restarts the meter's base). A billed room whose value is
+ * changed is a correction: the same checks, then its charge for this round is deleted and made again at
+ * the rate it was first billed at. Unchanged rows are left alone. Nothing is stored when any row is
+ * wrong. Safe to repeat.
  */
 export async function saveRound(repo: Repo, roundId: string, input: RoundInput, rate: number): Promise<SaveResult> {
   const view = await loadRound(repo, roundId);
@@ -241,21 +265,25 @@ export async function saveRound(repo: Repo, roundId: string, input: RoundInput, 
 
   const errors: Record<string, Key> = {};
   const rows: { roomId: string; value: number; baseReset: boolean }[] = [];
+  const corrections: { roomId: string; chargeId: string; rate: number }[] = [];
   for (const typed of input.rows) {
     const row = view.rows.find((r) => r.roomId === typed.roomId);
-    if (!row || row.bill) continue;
+    if (!row || (row.bill && !row.correctable)) continue;
     const parsed = parseReading(typed.raw);
     if (!parsed.ok) {
       errors[row.roomId] = parsed.error;
       continue;
     }
     if (parsed.value === null) continue;
+    // A billed reading sent back unchanged is not touched (no delete, no re-bill).
+    if (row.bill && parsed.value === row.saved) continue;
     const state = rowState(row.prev, parsed.value, row.recent);
     if (needsConfirm(state) && !typed.confirmed) {
       errors[row.roomId] = "readings.error.confirm";
       continue;
     }
     rows.push({ roomId: row.roomId, value: parsed.value, baseReset: state.kind === "lower" });
+    if (row.bill) corrections.push({ roomId: row.roomId, chargeId: row.bill.chargeId, rate: row.bill.rate > 0 ? row.bill.rate : rate });
   }
 
   const main: { key: MainMeterKey; value: number }[] = [];
@@ -278,5 +306,6 @@ export async function saveRound(repo: Repo, roundId: string, input: RoundInput, 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   if (rows.length > 0) await repo.saveRoundReadings(roundId, rows);
   if (main.length > 0) await repo.saveMainReadings(roundId, main);
-  return { ok: true, ...(await finishRound(repo, roundId, rate)) };
+  for (const c of corrections) await repo.deleteCharge(c.chargeId);
+  return { ok: true, ...(await billRound(repo, roundId, rate, new Map(corrections.map((c) => [c.roomId, c.rate])))) };
 }

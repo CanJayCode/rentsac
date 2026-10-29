@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeSummary } from "./rent";
+import { homeSummary, tenantBalance } from "./rent";
 import { createMemoryRepo } from "./repo/memory";
 import type { Repo, Room } from "./repo/types";
 import {
@@ -190,15 +190,6 @@ describe("saveRound", () => {
     expect(await light(repo, t3.id)).toHaveLength(1);
   });
 
-  it("keeps a billed room's reading as billed: a changed value for it is ignored", async () => {
-    const { repo, room, t3 } = await setup();
-    const r = await repo.createRound("2026-10-15");
-    await saveRound(repo, r.id, { rows: [{ roomId: room(3).id, raw: "1525", confirmed: false }], main: [] }, 10);
-    await saveRound(repo, r.id, { rows: [{ roomId: room(3).id, raw: "1530", confirmed: false }], main: [] }, 10);
-    expect((await repo.listReadings(r.id))[0].value).toBe(1525);
-    expect((await light(repo, t3.id))[0].amount).toBe(230);
-  });
-
   it("the newest round still takes a vacant room's reading after it is done", async () => {
     const { repo, room } = await setup();
     const r = await repo.createRound("2026-10-15");
@@ -215,6 +206,108 @@ describe("saveRound", () => {
     await repo.createRound("2026-10-15");
     const res = await saveRound(repo, base.id, { rows: [{ roomId: room(3).id, raw: "1600", confirmed: false }], main: [] }, 10);
     expect(res).toEqual({ ok: false, errors: {}, formError: "readings.error.closed" });
+  });
+});
+
+describe("correcting a billed reading in the newest round", () => {
+  const one = (roomId: string, raw: string, confirmed = false) => ({ rows: [{ roomId, raw, confirmed }], main: [] });
+  const roundCharges = async (repo: Repo, tenantId: string, roundId: string) =>
+    (await light(repo, tenantId)).filter((c) => c.roundId === roundId);
+
+  it("1525 -> 1535 changes the bill and keeps one charge", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, one(room(3).id, "1525"), 10);
+    expect(await saveRound(repo, r.id, one(room(3).id, "1535"), 10)).toMatchObject({ ok: true });
+    const cs = await roundCharges(repo, t3.id, r.id);
+    expect(cs).toHaveLength(1);
+    expect(cs[0]).toMatchObject({ amount: 330, units: 33, prevReading: 1502, currReading: 1535, rate: 10 });
+    expect((await repo.listReadings(r.id))[0]).toMatchObject({ value: 1535, baseReset: false });
+  });
+
+  it("fixes a confirmed-lower slip, and the next round bills against the corrected base", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, one(room(3).id, "1252", true), 10);
+    expect((await roundCharges(repo, t3.id, r.id))[0].amount).toBe(0);
+    await saveRound(repo, r.id, one(room(3).id, "1525"), 10);
+    expect((await repo.listReadings(r.id))[0]).toMatchObject({ value: 1525, baseReset: false });
+    expect((await roundCharges(repo, t3.id, r.id))[0]).toMatchObject({ amount: 230, prevReading: 1502, currReading: 1525 });
+
+    const next = await repo.createRound("2026-10-29");
+    await saveRound(repo, next.id, one(room(3).id, "1545"), 10);
+    expect((await roundCharges(repo, t3.id, next.id))[0]).toMatchObject({ amount: 200, prevReading: 1525 });
+  });
+
+  it("a wrong first reading stays a first reading but moves the next round's base", async () => {
+    const { repo, room } = await setup();
+    const t13 = await repo.saveTenant({ roomId: room(13).id, name: "Gaikwad", rentAmount: 3000, cycleStartDay: 1, startedOn: "2026-10-01" });
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, one(room(13).id, "5000"), 10);
+    await saveRound(repo, r.id, one(room(13).id, "5100"), 10);
+    const [c] = await roundCharges(repo, t13.id, r.id);
+    expect(c).toMatchObject({ amount: 0, units: 0, currReading: 5100 });
+    expect(c.prevReading).toBeUndefined();
+    const next = await repo.createRound("2026-10-29");
+    await saveRound(repo, next.id, one(room(13).id, "5130"), 10);
+    expect((await roundCharges(repo, t13.id, next.id))[0].amount).toBe(300);
+  });
+
+  it("a lower or high correction needs confirming, and a confirmed lower one resets the base", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, one(room(3).id, "1525"), 10);
+    const res = await saveRound(repo, r.id, one(room(3).id, "1400"), 10);
+    expect(res).toEqual({ ok: false, errors: { [room(3).id]: "readings.error.confirm" } });
+    expect((await repo.listReadings(r.id))[0].value).toBe(1525);
+    expect((await roundCharges(repo, t3.id, r.id))[0].amount).toBe(230);
+
+    await saveRound(repo, r.id, one(room(3).id, "1400", true), 10);
+    expect((await repo.listReadings(r.id))[0]).toMatchObject({ value: 1400, baseReset: true });
+    expect((await roundCharges(repo, t3.id, r.id))[0]).toMatchObject({ amount: 0, currReading: 1400 });
+  });
+
+  it("re-bills at the rate stored on the old charge, not the current setting", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, one(room(3).id, "1525"), 10);
+    await repo.setSetting("rate", "12");
+    await saveRound(repo, r.id, one(room(3).id, "1535"), await getRate(repo));
+    expect((await roundCharges(repo, t3.id, r.id))[0]).toMatchObject({ amount: 330, rate: 10 });
+  });
+
+  it("is refused in a round that is no longer the newest", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, one(room(3).id, "1525"), 10);
+    await repo.createRound("2026-10-29");
+    expect(await saveRound(repo, r.id, one(room(3).id, "1535"), 10)).toEqual({ ok: false, errors: {}, formError: "readings.error.closed" });
+    expect((await roundCharges(repo, t3.id, r.id))[0].amount).toBe(230);
+  });
+
+  it("saving unchanged values again deletes and re-adds nothing", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    const input = { rows: [{ roomId: room(3).id, raw: "1525", confirmed: false }, { roomId: room(5).id, raw: "777", confirmed: false }], main: [] };
+    await saveRound(repo, r.id, input, 10);
+    const before = await roundCharges(repo, t3.id, r.id);
+    let deletes = 0;
+    const counted: Repo = { ...repo, deleteCharge: async (id) => { deletes++; return repo.deleteCharge(id); } };
+    await saveRound(counted, r.id, input, 10);
+    await saveRound(counted, r.id, input, 10);
+    expect(deletes).toBe(0);
+    expect(await roundCharges(repo, t3.id, r.id)).toEqual(before);
+  });
+
+  it("after a payment, a lower corrected bill turns the overpaid part into advance", async () => {
+    const { repo, room, t3 } = await setup();
+    const r = await repo.createRound("2026-10-15");
+    await saveRound(repo, r.id, one(room(3).id, "1525"), 10);
+    const tenant = (await repo.getTenant(t3.id))!;
+    await repo.addPayment({ tenantId: t3.id, paidOn: "2026-10-20", amount: 3230, cash: 3230, upi: 0, target: "auto" }, "pay-1");
+    expect(await tenantBalance(repo, tenant, "2026-10-29")).toEqual({ rent: 0, light: 0, total: 0, credit: 0 });
+    await saveRound(repo, r.id, one(room(3).id, "1515"), 10);
+    expect(await tenantBalance(repo, tenant, "2026-10-29")).toEqual({ rent: 0, light: 0, total: 0, credit: 100 });
   });
 });
 
