@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useEffectEvent, useState } from "react";
 import { setupPin, unlock, type AuthResult } from "./actions";
-import { lockCopy as t } from "./copy";
+import { LangSwitch } from "@/components/LangSwitch";
+import { t as translate, type Key, type Locale } from "@/lib/i18n";
 
 type Phase = "code" | "choose" | "confirm" | "unlock";
 
 type Props = {
+  locale: Locale;
   mode: "unlock" | "setup";
   /** Whether the first-run form must ask for SETUP_CODE. The code itself never reaches the browser. */
   setupCodeRequired: boolean;
@@ -23,8 +25,9 @@ function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props) {
+export function LockScreen({ locale, mode, setupCodeRequired, initialRetryInMs }: Props) {
   const router = useRouter();
+  const t = (key: Key, vars?: Record<string, string | number>) => translate(locale, key, vars);
   const setupStart: Phase = setupCodeRequired ? "code" : "choose";
   const [phase, setPhase] = useState<Phase>(mode === "unlock" ? "unlock" : setupStart);
   const [digits, setDigits] = useState("");
@@ -57,7 +60,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
   function handleResult(result: AuthResult) {
     if (result.ok) {
       setOpened(true);
-      setMessage(t.opening);
+      setMessage(t("lock.opening"));
       window.setTimeout(() => router.replace("/"), prefersReducedMotion() ? 0 : 750);
       return;
     }
@@ -70,29 +73,29 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
         if (phase !== "unlock") setPhase(setupStart);
         break;
       case "invalid":
-        fail(t.wrongPin);
+        fail(t("lock.wrongPin"));
         break;
       case "mismatch":
         setFirstPin("");
-        fail(t.mismatch, "choose");
+        fail(t("lock.mismatch"), "choose");
         break;
       case "setup-code":
         setFirstPin("");
-        fail(t.wrongCode, "code");
+        fail(t("lock.wrongCode"), "code");
         break;
       case "already-set":
         setDigits("");
         setFirstPin("");
         setPhase("unlock");
-        setMessage(t.alreadySet);
+        setMessage(t("lock.alreadySet"));
         break;
       case "not-set":
         setDigits("");
         setPhase(setupStart);
-        setMessage(t.notSet);
+        setMessage(t("lock.notSet"));
         break;
       default:
-        fail(t.failed);
+        fail(t("lock.failed"));
     }
   }
 
@@ -110,7 +113,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
     }
     if (phase === "confirm" && pin !== firstPin) {
       setFirstPin("");
-      fail(t.mismatch, "choose");
+      fail(t("lock.mismatch"), "choose");
       return;
     }
     setBusy(true);
@@ -121,7 +124,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
           : await setupPin(firstPin, pin, setupCodeRequired ? setupCode : undefined);
       handleResult(result);
     } catch {
-      fail(t.failed);
+      fail(t("lock.failed"));
     } finally {
       setBusy(false);
     }
@@ -162,28 +165,32 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
   let title: string;
   let hint: string;
   if (locked) {
-    title = t.lockedTitle;
-    hint = t.lockedRetry(Math.ceil(remainingMs / 60000));
+    title = t("lock.lockedTitle");
+    const minutes = Math.ceil(remainingMs / 60000);
+    hint = minutes <= 1 ? t("lock.retry.one") : t("lock.retry.many", { minutes });
   } else if (phase === "code") {
-    title = t.codeTitle;
-    hint = t.codeHint;
+    title = t("lock.codeTitle");
+    hint = t("lock.codeHint");
   } else if (phase === "choose") {
-    title = t.chooseTitle;
-    hint = t.chooseHint;
+    title = t("lock.chooseTitle");
+    hint = t("lock.chooseHint");
   } else if (phase === "confirm") {
-    title = t.confirmTitle;
-    hint = t.confirmHint;
+    title = t("lock.confirmTitle");
+    hint = t("lock.confirmHint");
   } else {
-    title = t.unlockTitle;
-    hint = t.unlockHint;
+    title = t("lock.unlockTitle");
+    hint = t("lock.unlockHint");
   }
 
   return (
-    <main className="flex flex-1 justify-center px-4">
+    <main className="relative flex flex-1 justify-center px-4">
+      <div className="absolute right-4 top-[max(0.75rem,env(safe-area-inset-top))]">
+        <LangSwitch locale={locale} compact />
+      </div>
       <div className="flex min-h-dvh w-full max-w-sm flex-col items-center justify-between pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.75rem,env(safe-area-inset-bottom))] sm:min-h-0 sm:my-auto sm:h-[46rem] sm:py-8">
         <header className="flex flex-col items-center text-center">
           <Building lit={opened} />
-          <p className="mt-3 font-display text-lg font-medium tracking-[-0.01em] text-green">{t.appName}</p>
+          <p className="mt-3 font-display text-lg font-medium tracking-[-0.01em] text-green">{t("app.name")}</p>
           <h1 className="mt-6 font-display text-[1.95rem] leading-tight font-medium tracking-[-0.02em] text-ink">
             {title}
           </h1>
@@ -194,6 +201,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
 
         {phase === "code" && !locked ? (
           <SetupCodeForm
+            t={t}
             value={setupCode}
             onChange={setSetupCode}
             message={message}
@@ -220,7 +228,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
                 ))}
               </div>
               <span className="sr-only" role="status">
-                {t.digitsEntered(digits.length)}
+                {t("lock.digitsEntered", { n: digits.length })}
               </span>
               <p
                 className={`mt-3 min-h-[1.6em] text-center text-base font-medium ${opened ? "text-green" : "text-amber"}`}
@@ -239,7 +247,7 @@ export function LockScreen({ mode, setupCodeRequired, initialRetryInMs }: Props)
               <button
                 type="button"
                 className="lock-key lock-key-quiet"
-                aria-label={t.deleteKey}
+                aria-label={t("lock.deleteKey")}
                 disabled={inputBlocked || digits.length === 0}
                 onClick={removeLast}
               >
@@ -270,11 +278,13 @@ function DigitKey({ digit, disabled, onPress }: { digit: string; disabled: boole
 }
 
 function SetupCodeForm({
+  t,
   value,
   onChange,
   message,
   onSubmit,
 }: {
+  t: (key: Key) => string;
   value: string;
   onChange: (v: string) => void;
   message: string | null;
@@ -289,7 +299,7 @@ function SetupCodeForm({
       }}
     >
       <label htmlFor="setup-code" className="text-base font-medium text-ink">
-        {t.codeLabel}
+        {t("lock.codeLabel")}
       </label>
       <input
         id="setup-code"
@@ -312,7 +322,7 @@ function SetupCodeForm({
         disabled={!value.trim()}
         className="h-14 w-full rounded-full bg-green text-lg font-semibold text-white transition-[transform,opacity] duration-100 active:scale-[0.98] disabled:opacity-40 motion-reduce:transform-none"
       >
-        {t.codeContinue}
+        {t("lock.codeContinue")}
       </button>
     </form>
   );

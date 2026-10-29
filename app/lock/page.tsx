@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { getSessionSecret } from "@/lib/auth/cookie";
 import { clientIp, LOCKOUT_LOOKBACK_MS, lockoutState } from "@/lib/auth/ratelimit";
+import { getLocale } from "@/lib/i18n/server";
 import { getRepo } from "@/lib/repo";
 import { LockScreen } from "./LockScreen";
 
@@ -30,10 +31,11 @@ async function loadLockState() {
 // refreshes this route, and redirecting then would cut the unlock moment short. The client
 // navigates home itself after a successful unlock.
 export default async function LockPage() {
-  const state = await loadLockState();
+  const [state, locale] = await Promise.all([loadLockState(), getLocale()]);
 
   return (
     <LockScreen
+      locale={locale}
       mode={state.hasPin ? "unlock" : "setup"}
       setupCodeRequired={state.setupCodeRequired}
       initialRetryInMs={state.retryInMs}

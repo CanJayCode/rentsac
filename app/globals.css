@@ -29,6 +29,14 @@ body {
   line-height: 1.5;
 }
 
+/* Fraunces has no Devanagari: Marathi headings use Hind, with normal tracking and a taller line box
+   so matras above and below the line are not clipped. Unlayered, so it beats the Tailwind utilities. */
+html:lang(mr) .font-display {
+  font-family: var(--font-hind), system-ui, sans-serif;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
 /* Lock screen */
 .lock-key {
   display: grid;
