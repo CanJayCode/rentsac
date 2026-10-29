@@ -93,7 +93,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
       </section>
 
       <div className="rise grid grid-cols-2 gap-3" style={{ "--i": 2 } as CSSProperties}>
-        <ActionLink href="/rooms" primary icon={<RupeeIcon />}>
+        <ActionLink href="/pay" primary icon={<RupeeIcon />}>
           {t(locale, "home.recordPayment")}
         </ActionLink>
         <ActionLink href="/readings" icon={<MeterIcon />}>

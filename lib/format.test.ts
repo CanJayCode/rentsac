@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycleText, formatDay, ordinal } from "./format";
+import { cycleText, dateParts, formatDay, formatDayMonth, ordinal } from "./format";
 
 describe("ordinal", () => {
   it("writes English ordinals including the teens", () => {
@@ -29,5 +29,13 @@ describe("formatDay", () => {
   it("formats an ISO date without shifting it by the time zone", () => {
     expect(formatDay("en", "2026-10-01")).toBe("1 Oct 2026");
     expect(formatDay("mr", "2026-10-01")).toMatch(/^1 .+ 2026$/);
+  });
+});
+
+describe("formatDayMonth and dateParts", () => {
+  it("writes the day and short month", () => {
+    expect(formatDayMonth("en", "2026-10-05")).toBe("5 Oct");
+    expect(dateParts("en", "2026-10-05")).toEqual({ day: "5", month: "Oct" });
+    expect(dateParts("mr", "2026-10-05").day).toBe("5");
   });
 });

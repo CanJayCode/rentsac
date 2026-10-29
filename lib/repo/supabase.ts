@@ -267,7 +267,8 @@ export function createSupabaseRepo(config: SupabaseRepoConfig = {}): Repo {
         target: patch.target,
         cash: patch.cash,
         upi: patch.upi,
-        note: patch.note,
+        // An empty note clears the column; undefined leaves it alone.
+        note: patch.note === "" ? null : patch.note,
         deleted_at: patch.deletedAt,
       });
       const q =
@@ -276,9 +277,9 @@ export function createSupabaseRepo(config: SupabaseRepoConfig = {}): Repo {
           : db.from("payments").select("*").eq("id", id).maybeSingle();
       return toPayment(await mustOne(q, "Payment", id));
     },
-    async deletePayment(id) {
+    async deletePayment(id, on) {
       await mustOne(
-        db.from("payments").update({ deleted_at: today() }).eq("id", id).select("id").maybeSingle(),
+        db.from("payments").update({ deleted_at: on ?? today() }).eq("id", id).select("id").maybeSingle(),
         "Payment",
         id,
       );

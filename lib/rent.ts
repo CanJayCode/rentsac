@@ -1,6 +1,6 @@
 import { periodContaining, periodsBetween, type Period } from "./cycles";
 import { allocate, pending } from "./ledger";
-import type { Repo, RepoCharge, Tenant } from "./repo/types";
+import type { Repo, RepoCharge, RepoPayment, Tenant } from "./repo/types";
 
 export type HomeRow = {
   roomId: string;
@@ -124,6 +124,19 @@ export function rentPreview(
 export async function tenantBalance(repo: Repo, tenant: Tenant, today: string): Promise<Balance> {
   const charges = tenant.leftOn ? await repo.listCharges(tenant.id) : await syncRent(repo, tenant, today);
   return balanceFrom(repo, tenant.id, charges);
+}
+
+export type Account = { charges: RepoCharge[]; payments: RepoPayment[]; balance: Balance };
+
+/**
+ * Everything for a tenant's ledger: all charges (rent brought up to date first), all payments
+ * including deleted ones, and the balance worked out from the live ones only.
+ */
+export async function tenantAccount(repo: Repo, tenant: Tenant, today: string): Promise<Account> {
+  const charges = tenant.leftOn ? await repo.listCharges(tenant.id) : await syncRent(repo, tenant, today);
+  const payments = await repo.listPayments(tenant.id);
+  const { paidByCharge, credit } = allocate(charges, payments.filter((p) => !p.deletedAt));
+  return { charges, payments, balance: { ...pending(charges, paidByCharge), credit } };
 }
 
 export async function homeSummary(

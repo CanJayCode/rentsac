@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
+import { Ledger } from "@/components/Ledger";
 import { RoomBadge } from "@/components/RoomBadge";
 import { RoomList, RoomRow } from "@/components/RoomRow";
 import { StatusChip } from "@/components/StatusChip";
@@ -8,9 +9,11 @@ import { requireSession } from "@/lib/auth/require-session";
 import { cycleText, formatDay } from "@/lib/format";
 import { t, type Locale } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
+import { ledgerRows } from "@/lib/ledger-view";
 import { formatINR } from "@/lib/money";
-import { tenantBalance, type Balance } from "@/lib/rent";
-import type { Tenant } from "@/lib/repo/types";
+import { tenantAccount, tenantBalance, type Balance } from "@/lib/rent";
+import type { RepoPayment, Tenant } from "@/lib/repo/types";
+import { deletePayment } from "./actions";
 import { loadRoom } from "./data";
 import { VacatePanel } from "./VacatePanel";
 
@@ -28,6 +31,11 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
   const balances = new Map<string, Balance>(
     await Promise.all(tenants.map(async (tn) => [tn.id, await tenantBalance(repo, tn, today)] as const)),
   );
+  const account = shown ? await tenantAccount(repo, shown, today) : null;
+  const notice = paymentNotice(query, account?.payments ?? []);
+  const tenantQuery = shown?.leftOn ? `tenant=${shown.id}&` : "";
+  // A former tenant can still pay what they owe, and a mistaken entry can still be put right.
+  const canPay = Boolean(shown && (!shown.leftOn || balances.get(shown.id)!.total > 0));
   const former = tenants.filter((tn) => tn.leftOn && tn.id !== shown?.id && balances.get(tn.id)!.total > 0);
   const justLeft = tenants.find((tn) => tn.id === one(query.left) && tn.leftOn);
 
@@ -52,9 +60,32 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
       </div>
 
       {justLeft ? <LeftNotice locale={locale} name={justLeft.name} /> : null}
+      {notice ? <PaymentNotice locale={locale} notice={notice} /> : null}
 
       {shown ? (
-        <TenantSummary locale={locale} roomNumber={room.number} roomLabel={room.label} tenant={shown} balance={balances.get(shown.id)!} />
+        <>
+          <TenantSummary
+            locale={locale}
+            roomNumber={room.number}
+            roomLabel={room.label}
+            tenant={shown}
+            balance={balances.get(shown.id)!}
+            payHref={canPay ? `/rooms/${room.number}/pay${tenantQuery ? `?${tenantQuery.slice(0, -1)}` : ""}` : null}
+          />
+          <div className="rise mt-1" style={{ "--i": 4 } as CSSProperties}>
+            <Ledger
+              locale={locale}
+              rows={ledgerRows(account!.charges, account!.payments)}
+              roomNumber={room.number}
+              tenantId={shown.id}
+              cycleStartDay={shown.cycleStartDay}
+              editable
+              tenantQuery={tenantQuery}
+              highlight={notice?.payment.id}
+              deleteAction={deletePayment}
+            />
+          </div>
+        </>
       ) : (
         <VacantRoom locale={locale} roomNumber={room.number} roomLabel={room.label} />
       )}
@@ -80,7 +111,7 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
       ) : null}
 
       {shown && !shown.leftOn ? (
-        <div className="rise mt-2" style={{ "--i": 4 } as CSSProperties}>
+        <div className="rise mt-2" style={{ "--i": 5 } as CSSProperties}>
           <VacatePanel locale={locale} tenant={shown} balance={balances.get(shown.id)!.total} today={today} />
         </div>
       ) : null}
@@ -109,12 +140,14 @@ function TenantSummary({
   roomLabel,
   tenant,
   balance,
+  payHref,
 }: {
   locale: Locale;
   roomNumber: number;
   roomLabel?: string;
   tenant: Tenant;
   balance: Balance;
+  payHref: string | null;
 }) {
   const gone = Boolean(tenant.leftOn);
   return (
@@ -154,17 +187,30 @@ function TenantSummary({
         </div>
       </section>
 
-      {!gone ? (
-        <div className="rise" style={{ "--i": 3 } as CSSProperties}>
-          <Link
-            href={`/rooms/${roomNumber}/edit`}
-            className="press flex min-h-12 items-center justify-center gap-2 rounded-full bg-card px-5 text-base font-semibold text-ink shadow-soft outline-none active:bg-well focus-visible:ring-2 focus-visible:ring-green"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-green">
-              <path d="M4 20h4L19 9l-4-4L4 16v4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-            </svg>
-            {t(locale, "common.edit")}
-          </Link>
+      {payHref || !gone ? (
+        <div className="rise flex gap-3" style={{ "--i": 3 } as CSSProperties}>
+          {payHref ? (
+            <Link
+              href={payHref}
+              className="press flex min-h-14 flex-1 items-center justify-center gap-2 rounded-full bg-green px-5 text-[1.0625rem] font-semibold text-white outline-none active:bg-green-deep focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-white/85">
+                <path d="M7 5h10M7 9h10M7 5h3.5a4 4 0 0 1 0 8H7l7 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {t(locale, "home.recordPayment")}
+            </Link>
+          ) : null}
+          {!gone ? (
+            <Link
+              href={`/rooms/${roomNumber}/edit`}
+              className={`press flex min-h-14 items-center justify-center gap-2 rounded-full bg-card px-5 text-base font-semibold text-ink shadow-soft outline-none active:bg-well focus-visible:ring-2 focus-visible:ring-green ${payHref ? "" : "flex-1"}`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-green">
+                <path d="M4 20h4L19 9l-4-4L4 16v4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              </svg>
+              {t(locale, "common.edit")}
+            </Link>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -214,5 +260,32 @@ function LeftNotice({ locale, name }: { locale: Locale; name: string }) {
         </Link>
       </p>
     </section>
+  );
+}
+
+type Notice = { kind: "paid" | "edited" | "removed"; payment: RepoPayment };
+
+/** After a save, edit or delete the action comes back here naming the payment it touched. */
+function paymentNotice(query: Record<string, string | string[] | undefined>, payments: RepoPayment[]): Notice | null {
+  for (const kind of ["paid", "edited", "removed"] as const) {
+    const id = one(query[kind]);
+    const payment = id ? payments.find((p) => p.id === id) : undefined;
+    if (payment) return { kind, payment };
+  }
+  return null;
+}
+
+function PaymentNotice({ locale, notice }: { locale: Locale; notice: Notice }) {
+  const text =
+    notice.kind === "paid"
+      ? t(locale, "pay.saved", { amount: formatINR(notice.payment.amount) })
+      : t(locale, notice.kind === "edited" ? "pay.updated" : "pay.removed");
+  return (
+    <p className="rise flex items-center gap-2.5 rounded-card bg-green-soft px-5 py-3.5 text-base font-semibold text-green-deep" role="status">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="flex-none">
+        <path d="m3.5 8.4 2.9 2.9 6.1-6.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {text}
+    </p>
   );
 }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createMemoryRepo } from "./repo/memory";
 import type { Repo, Room, Tenant } from "./repo/types";
-import { closeTenancy, ensureRentCharges, homeSummary, regenerateRentCharges, rentPreview, rentTermsEditable, tenantBalance } from "./rent";
+import { closeTenancy, ensureRentCharges, homeSummary, regenerateRentCharges, rentPreview, rentTermsEditable, tenantAccount, tenantBalance } from "./rent";
 
 let repo: Repo;
 let rooms: Room[];
@@ -246,5 +246,18 @@ describe("rentPreview", () => {
     });
     expect(rentPreview({ cycleStartDay: 1, startedOn: "2026-11-05", rentAmount: 3000 }, "2026-10-28").dueCount).toBe(0);
     expect(rentPreview({ cycleStartDay: 1, startedOn: "2025-10-28", rentAmount: 3000 }, "2026-10-28").dueCount).toBe(13);
+  });
+});
+
+describe("tenantAccount", () => {
+  it("lists every charge and every payment (deleted too) and counts only live payments", async () => {
+    const t = await addTenant(6, { startedOn: "2026-10-01" });
+    const kept = await pay(t, 1000);
+    const gone = await pay(t, 2000);
+    await repo.deletePayment(gone.id, "2026-10-06");
+    const account = await tenantAccount(repo, t, "2026-10-28");
+    expect(account.charges.map((c) => c.periodStart)).toEqual(["2026-10-01"]);
+    expect(account.payments.map((p) => p.id).sort()).toEqual([kept.id, gone.id].sort());
+    expect(account.balance).toEqual({ rent: 2000, light: 0, total: 2000, credit: 0 });
   });
 });

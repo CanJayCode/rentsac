@@ -102,13 +102,13 @@ export function createMemoryRepo(): Repo {
     },
     async updatePayment(id, patch) {
       const p = need(payments.find((x) => x.id === id), "Payment", id);
-      Object.assign(p, patch);
+      // Like the database: an undefined field is left alone, an empty note clears it.
+      for (const [k, v] of Object.entries(patch)) if (v !== undefined) Object.assign(p, { [k]: v });
+      if (p.note === "") delete p.note;
       return copy(p);
     },
-    async deletePayment(id) {
-      need(payments.find((x) => x.id === id), "Payment", id).deletedAt = new Date()
-        .toISOString()
-        .slice(0, 10);
+    async deletePayment(id, on) {
+      need(payments.find((x) => x.id === id), "Payment", id).deletedAt = on ?? new Date().toISOString().slice(0, 10);
     },
 
     async createRound(date) {

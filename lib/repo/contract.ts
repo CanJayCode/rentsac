@@ -187,6 +187,20 @@ export function runContract(
       expect(list[0].deletedAt).toMatch(/^\d{4}-\d{2}-\d{2}/);
     });
 
+    it("deletePayment stamps the given date and throws for an unknown id", async () => {
+      const p = await repo.addPayment(payment(tenantId, 1000), "key-1");
+      await repo.deletePayment(p.id, "2026-02-03");
+      expect((await repo.listPayments(tenantId))[0].deletedAt).toBe("2026-02-03");
+      await expect(repo.deletePayment(crypto.randomUUID(), "2026-02-03")).rejects.toThrow();
+    });
+
+    it("updatePayment with an empty note clears it", async () => {
+      const p = await repo.addPayment({ ...payment(tenantId, 1000), note: "first" }, "key-1");
+      const u = await repo.updatePayment(p.id, { note: "" });
+      expect(u.note).toBeUndefined();
+      expect((await repo.listPayments(tenantId))[0].note).toBeUndefined();
+    });
+
     it("vacateTenant sets leftOn, keeps history, and activeOnly filters", async () => {
       await repo.addCharge(rentCharge(tenantId, "2026-01-01"));
       await repo.addPayment(payment(tenantId, 1000), "key-1");

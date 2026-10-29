@@ -73,12 +73,16 @@ export interface Repo {
   listPayments(tenantId: string): Promise<RepoPayment[]>;
   /** A repeated idemKey returns the existing payment and stores nothing new. */
   addPayment(p: Omit<RepoPayment, "id" | "idemKey">, idemKey: string): Promise<RepoPayment>;
+  /** An empty note clears it. Throws when the id is unknown. */
   updatePayment(
     id: string,
     patch: Partial<Omit<RepoPayment, "id" | "idemKey" | "tenantId">>,
   ): Promise<RepoPayment>;
-  /** Soft delete: sets deletedAt to the current ISO date. */
-  deletePayment(id: string): Promise<void>;
+  /**
+   * Soft delete: sets deletedAt to `on` (YYYY-MM-DD; callers pass today in India), or to
+   * today's UTC date when `on` is left out. Throws when the id is unknown.
+   */
+  deletePayment(id: string, on?: string): Promise<void>;
 
   createRound(date: string): Promise<Round>;
   getRound(id: string): Promise<Round | null>;

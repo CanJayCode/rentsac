@@ -39,3 +39,14 @@ export function formatWeekday(locale: Locale, iso: string): string {
     timeZone: "UTC",
   }).format(utc(iso));
 }
+
+/** "15 Oct" from YYYY-MM-DD, for ranges inside one line. */
+export function formatDayMonth(locale: Locale, iso: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), { day: "numeric", month: "short", timeZone: "UTC" }).format(utc(iso));
+}
+
+/** The day of the month and the short month name, for a date plate. */
+export function dateParts(locale: Locale, iso: string): { day: string; month: string } {
+  const month = new Intl.DateTimeFormat(intlLocale(locale), { month: "short", timeZone: "UTC" }).format(utc(iso));
+  return { day: String(Number(iso.slice(8, 10))), month };
+}
