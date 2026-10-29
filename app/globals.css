@@ -6,6 +6,12 @@
   --green: #1d6b3f;
   --amber: #a35a00;
   --card: #ffffff;
+  --amber-soft: #f8ead5;
+  --amber-deep: #7a4300;
+  --green-soft: #e2efe5;
+  --green-deep: #155230;
+  --well: #f1ecdf;
+  --line: rgba(29, 43, 36, 0.08);
   --shadow-soft: 0 2px 6px rgba(29, 43, 36, 0.06), 0 12px 32px rgba(29, 43, 36, 0.08);
 }
 
@@ -15,6 +21,12 @@
   --color-green: var(--green);
   --color-amber: var(--amber);
   --color-card: var(--card);
+  --color-amber-soft: var(--amber-soft);
+  --color-amber-deep: var(--amber-deep);
+  --color-green-soft: var(--green-soft);
+  --color-green-deep: var(--green-deep);
+  --color-well: var(--well);
+  --color-line: var(--line);
   --shadow-soft: var(--shadow-soft);
   --radius-card: 1.25rem;
   --font-display: var(--font-fraunces), Georgia, serif;
@@ -162,4 +174,68 @@ html:lang(mr) .font-display {
   .lock-shake {
     animation: none;
   }
+}
+
+/* Money and room numbers are Latin digits, so they keep Fraunces in both languages. */
+.figure {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Home and rooms: one quiet arrival, staggered by --i; presses answer the thumb. */
+.rise {
+  animation: rise 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.press {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 120ms ease-out;
+}
+.press:active {
+  transform: scale(0.98);
+}
+.row-press {
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease-out;
+}
+.row-press:active {
+  background-color: var(--well);
+}
+
+.window {
+  transition: fill 240ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+  .press,
+  .row-press,
+  .window {
+    transition: none;
+  }
+  .press:active {
+    transform: none;
+  }
+}
+
+/* Hind's Devanagari sits high in a centred pill; drop it to the optical middle. */
+html:lang(mr) .deva-nudge {
+  padding-top: 0.14em;
 }
