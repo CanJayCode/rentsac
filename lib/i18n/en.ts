@@ -290,7 +290,6 @@ export const en = {
   "lock.digitsEntered": "{n} of 6 digits entered",
   "pay.title": "Record payment",
   "pay.editTitle": "Edit payment",
-  "pay.forTenant": "{name} · room {n}",
   "pay.amount": "Amount received",
   "pay.fill.all": "All due {amount}",
   "pay.fill.rent": "Only rent {amount}",

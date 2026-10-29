@@ -292,7 +292,6 @@ export const mr: Record<Key, string> = {
 
   "pay.title": "पैसे जमा करा",
   "pay.editTitle": "जमा नोंद बदला",
-  "pay.forTenant": "{name} · खोली {n}",
   "pay.amount": "मिळालेली रक्कम",
   "pay.fill.all": "सर्व बाकी {amount}",
   "pay.fill.rent": "फक्त भाडे {amount}",

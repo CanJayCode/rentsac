@@ -42,7 +42,7 @@ export function LangSwitch({ locale, compact = false }: Props) {
             aria-pressed={active}
             onClick={() => choose(o.locale)}
             className={`rounded-full font-semibold leading-none transition-colors duration-150 motion-reduce:transition-none ${
-              compact ? "min-h-8 min-w-10 px-2.5 text-[0.8125rem]" : "min-h-9 min-w-11 px-3 text-sm"
+              compact ? "min-h-11 min-w-11 px-3 text-[0.8125rem]" : "min-h-11 min-w-12 px-3 text-sm"
             } ${o.locale === "mr" ? "pt-[0.2rem]" : ""} ${active ? "bg-green text-white" : "text-ink/65 active:bg-ink/10"}`}
           >
             {o.label}
