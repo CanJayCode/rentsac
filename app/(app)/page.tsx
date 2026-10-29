@@ -1,11 +1,12 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
-import { BuildingGlance, WINDOW_FILL, type WindowState } from "@/components/BuildingGlance";
-import { FilterTabs, parseTab, type HomeTab } from "@/components/FilterTabs";
+import { FilterTabs, parseTab } from "@/components/FilterTabs";
 import { RoomList, RoomRow } from "@/components/RoomRow";
+import { ROOM_STATE_CLASS, RoomsGlance, type RoomState } from "@/components/RoomsGlance";
 import { StatusChip } from "@/components/StatusChip";
 import { requireSession } from "@/lib/auth/require-session";
 import { formatWeekday } from "@/lib/format";
+import { dueFor, heroState, type HomeTab } from "@/lib/home";
 import { t, type Key, type Locale } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
 import { formatINR } from "@/lib/money";
@@ -19,9 +20,11 @@ const TOTAL_LABEL: Record<HomeTab, Key> = {
   light: "home.pendingLight",
 };
 
-function dueFor(row: HomeRow, tab: HomeTab): number {
-  return tab === "rent" ? row.pendingRent : tab === "light" ? row.pendingLight : row.pendingTotal;
-}
+const CLEAR_LINE: Record<HomeTab, Key> = {
+  all: "home.roomsOwe.none",
+  rent: "home.roomsOwe.noneRent",
+  light: "home.roomsOwe.noneLight",
+};
 
 async function loadHome() {
   const today = todayIST();
@@ -35,47 +38,58 @@ export default async function Home({ searchParams }: PageProps<"/">) {
   const [locale, { tab: rawTab }, { today, summary, rooms }] = await Promise.all([getLocale(), searchParams, loadHome()]);
   const tab = parseTab(rawTab);
   const { rows, left } = summary;
-
-  const total = [...rows, ...left].reduce((sum, r) => sum + dueFor(r, tab), 0);
-  const credit = [...rows, ...left].reduce((sum, r) => sum + r.credit, 0);
-  const owing = rows.filter((r) => dueFor(r, tab) > 0).length;
+  const hero = heroState(rows, left, tab);
   const empty = rows.length === 0 && left.length === 0;
 
   const byRoom = new Map(rows.map((r) => [r.roomId, r]));
-  const windows = rooms.map((room) => {
+  const glance = rooms.map((room) => {
     const row = byRoom.get(room.id);
-    const state: WindowState = !row ? "vacant" : dueFor(row, tab) > 0 ? "due" : "paid";
+    const state: RoomState = !row ? "vacant" : dueFor(row, tab) > 0 ? "due" : "paid";
     return { number: room.number, state };
   });
-
-  const owingLine =
-    owing === 0
-      ? t(locale, tab === "rent" ? "home.roomsOwe.noneRent" : tab === "light" ? "home.roomsOwe.noneLight" : "home.roomsOwe.none")
-      : t(locale, owing === 1 ? "home.roomsOwe.one" : "home.roomsOwe.many", { n: owing, total: rows.length });
 
   return (
     <div className="flex flex-col gap-5">
       <p className="rise px-1 text-base font-medium text-ink/60">{formatWeekday(locale, today)}</p>
 
       <section className="rise rounded-card bg-card p-5 shadow-soft" style={{ "--i": 1 } as CSSProperties}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-base font-medium text-ink/70">{t(locale, TOTAL_LABEL[tab])}</h1>
-            <p className="figure mt-1.5 text-[2.75rem] leading-none font-semibold text-ink">{formatINR(total)}</p>
-            {!empty ? (
-              <p className={`mt-3 text-base leading-snug ${owing > 0 ? "text-ink/75" : "font-medium text-green-deep"}`}>
-                {owingLine}
+        <h1 className="text-base font-medium text-ink/70">{t(locale, TOTAL_LABEL[tab])}</h1>
+        <p className="figure mt-1.5 text-[2.75rem] leading-none font-semibold text-ink">{formatINR(hero.total)}</p>
+        {!empty ? (
+          <div className="mt-3 flex flex-col gap-0.5 text-base leading-snug">
+            {hero.clear ? <p className="font-medium text-green-deep">{t(locale, CLEAR_LINE[tab])}</p> : null}
+            {hero.owingRooms > 0 ? (
+              <p className="text-ink/75">
+                {t(locale, hero.owingRooms === 1 ? "home.roomsOwe.one" : "home.roomsOwe.many", {
+                  n: hero.owingRooms,
+                  total: hero.occupied,
+                })}
               </p>
             ) : null}
-            {credit > 0 ? (
-              <p className="mt-1 text-base leading-snug text-green-deep">
-                {t(locale, "home.advanceHeld", { amount: formatINR(credit) })}
-              </p>
+            {hero.owingFormer > 0 ? (
+              <a href="#left" className="self-start font-medium text-amber-deep underline decoration-amber-deep/35 underline-offset-4">
+                {t(locale, hero.owingFormer === 1 ? "home.formerOwe.one" : "home.formerOwe.many", { n: hero.owingFormer })}
+              </a>
+            ) : null}
+            {hero.credit > 0 ? (
+              <p className="text-green-deep">{t(locale, "home.advanceHeld", { amount: formatINR(hero.credit) })}</p>
             ) : null}
           </div>
-          <BuildingGlance rooms={windows} label={t(locale, "home.glance")} />
-        </div>
-        {!empty ? <Legend locale={locale} /> : null}
+        ) : null}
+        {!empty ? (
+          <div className="mt-5">
+            <RoomsGlance
+              rooms={glance}
+              label={t(locale, "home.glance")}
+              stateLabel={{
+                due: t(locale, "home.legend.due"),
+                paid: t(locale, "home.legend.paid"),
+                vacant: t(locale, "home.legend.vacant"),
+              }}
+            />
+            <Legend locale={locale} />
+          </div>
+        ) : null}
       </section>
 
       <div className="rise grid grid-cols-2 gap-3" style={{ "--i": 2 } as CSSProperties}>
@@ -115,7 +129,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
           ) : null}
 
           {left.length > 0 ? (
-            <section className="flex flex-col gap-2.5">
+            <section id="left" className="flex scroll-mt-20 flex-col gap-2.5">
               <div className="px-1">
                 <h2 className="text-lg font-semibold text-ink">{t(locale, "home.leftTitle")}</h2>
                 <p className="text-[0.9375rem] leading-snug text-ink/65">{t(locale, "home.leftHint")}</p>
@@ -171,16 +185,16 @@ function DueLine({ locale, row, tab }: { locale: Locale; row: HomeRow; tab: Home
 }
 
 function Legend({ locale }: { locale: Locale }) {
-  const items: { state: WindowState; label: Key }[] = [
+  const items: { state: RoomState; label: Key }[] = [
     { state: "due", label: "home.legend.due" },
     { state: "paid", label: "home.legend.paid" },
     { state: "vacant", label: "home.legend.vacant" },
   ];
   return (
-    <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1 rounded-2xl bg-well/60 px-3.5 py-2 text-[0.875rem] text-ink/70" aria-hidden="true">
+    <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 px-0.5 text-[0.875rem] text-ink/70" aria-hidden="true">
       {items.map(({ state, label }) => (
         <li key={state} className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-[3px]" style={{ background: WINDOW_FILL[state] }} />
+          <span className={`size-3 rounded-[4px] ${ROOM_STATE_CLASS[state]}`} />
           {t(locale, label)}
         </li>
       ))}

@@ -4,11 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { assertSessionAction } from "@/lib/auth/require-session";
 import type { Key } from "@/lib/i18n";
-import { ensureRentCharges } from "@/lib/rent";
+import {
+  closeTenancy,
+  ensureRentCharges,
+  MONTHS_CONFIRM_ABOVE,
+  regenerateRentCharges,
+  rentPreview,
+  rentTermsEditable,
+} from "@/lib/rent";
 import { getRepo } from "@/lib/repo";
 import type { Repo } from "@/lib/repo/types";
 import { todayIST } from "@/lib/today";
-import { validateRoom, validateTenant, type RoomField, type TenantField } from "@/lib/validate";
+import { isRealDate, validateRoom, validateTenant, type RoomField, type TenantField } from "@/lib/validate";
 
 export type FormState<F extends string> = {
   errors?: Partial<Record<F, Key>>;
@@ -47,7 +54,31 @@ export async function saveRoom(_prev: FormState<RoomField>, data: FormData): Pro
   return { saved: parsed.value.number };
 }
 
-export async function saveTenant(_prev: FormState<TenantField>, data: FormData): Promise<FormState<TenantField>> {
+/** Renumbers or relabels a room. Tenants and readings point at the room id, so they move with it. */
+export async function updateRoom(_prev: FormState<RoomField>, data: FormData): Promise<FormState<RoomField>> {
+  await assertSessionAction();
+  const values = { number: field(data, "number"), label: field(data, "label") };
+  const parsed = validateRoom(values);
+  if (!parsed.ok) return { errors: parsed.errors, values };
+
+  const repo = await getRepo();
+  const rooms = await repo.listRooms();
+  const room = rooms.find((r) => r.id === field(data, "roomId"));
+  if (!room) return { formError: "form.error.failed", values };
+  if (rooms.some((r) => r.id !== room.id && r.number === parsed.value.number)) {
+    return { errors: { number: "form.error.roomTaken" }, values };
+  }
+  await repo.saveRoom({ id: room.id, number: parsed.value.number, label: parsed.value.label ?? "" });
+  revalidatePath("/", "layout");
+  redirect(`/rooms/${parsed.value.number}`);
+}
+
+type TenantFormField = TenantField | "confirmMonths";
+
+export async function saveTenant(
+  _prev: FormState<TenantFormField>,
+  data: FormData,
+): Promise<FormState<TenantFormField>> {
   await assertSessionAction();
   const preset = field(data, "cyclePreset");
   const values = {
@@ -71,8 +102,8 @@ export async function saveTenant(_prev: FormState<TenantField>, data: FormData):
     return { formError: "form.error.occupied", values };
   }
 
-  // Once rent has been charged, the cycle and move-in date stay as they were.
-  const locked = existing ? (await repo.listCharges(existing.id)).some((c) => c.kind === "rent") : false;
+  // Once a payment is recorded, the cycle and move-in date stay as they were.
+  const locked = existing ? !(await rentTermsEditable(repo, existing.id)) : false;
   const parsed = validateTenant({
     name: values.name,
     rentAmount: values.rentAmount,
@@ -81,27 +112,39 @@ export async function saveTenant(_prev: FormState<TenantField>, data: FormData):
   });
   if (!parsed.ok) return { errors: parsed.errors, values };
 
-  const tenant = await repo.saveTenant({
-    ...(existing ?? {}),
-    ...parsed.value,
-    roomId: room.id,
-  });
-  await ensureRentCharges(repo, tenant, todayIST());
+  const today = todayIST();
+  const termsChanged =
+    !!existing &&
+    (existing.cycleStartDay !== parsed.value.cycleStartDay || existing.startedOn !== parsed.value.startedOn);
+  if (!locked && (!existing || termsChanged)) {
+    const { dueCount } = rentPreview(parsed.value, today);
+    if (dueCount > MONTHS_CONFIRM_ABOVE && field(data, "confirmMonths") !== "yes") {
+      return { errors: { confirmMonths: "form.error.confirmMonths" }, values };
+    }
+  }
+
+  const tenant = await repo.saveTenant({ ...(existing ?? {}), ...parsed.value, roomId: room.id });
+  if (termsChanged && !locked) await regenerateRentCharges(repo, tenant, today);
+  else await ensureRentCharges(repo, tenant, today);
   revalidatePath("/", "layout");
   redirect(`/rooms/${room.number}`);
 }
 
-export async function vacateTenant(data: FormData): Promise<void> {
+export async function vacateTenant(_prev: FormState<"leftOn">, data: FormData): Promise<FormState<"leftOn">> {
   await assertSessionAction();
   const repo = await getRepo();
   const tenant = await repo.getTenant(field(data, "tenantId"));
-  if (!tenant || tenant.leftOn) throw new Error("Tenant not found or already left");
+  if (!tenant) return { formError: "form.error.failed" };
   const room = (await repo.listRooms()).find((r) => r.id === tenant.roomId);
+  // A second tap after the first one went through: just show the room.
+  if (tenant.leftOn) redirect(`/rooms/${room?.number ?? ""}`);
 
   const today = todayIST();
-  // Charge every period that has started before closing the tenancy.
-  await ensureRentCharges(repo, tenant, today);
-  await repo.vacateTenant(tenant.id, today);
+  const leftOn = field(data, "leftOn").trim();
+  if (!isRealDate(leftOn) || leftOn < tenant.startedOn || leftOn > today) {
+    return { errors: { leftOn: "form.error.leftOn" }, values: { leftOn } };
+  }
+  await closeTenancy(repo, tenant, leftOn, today);
   revalidatePath("/", "layout");
   redirect(`/rooms/${room?.number ?? ""}?left=${tenant.id}`);
 }

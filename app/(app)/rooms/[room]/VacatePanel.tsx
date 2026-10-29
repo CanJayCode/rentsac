@@ -1,28 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useActionState, useState } from "react";
+import { Field, inputClass } from "@/components/Field";
+import { t, type Locale } from "@/lib/i18n";
+import { formatINR } from "@/lib/money";
 import { vacateTenant } from "../actions";
 
 type Props = {
-  tenantId: string;
-  labels: {
-    open: string;
-    title: string;
-    balance: string | null;
-    clear: string;
-    finalReading: string;
-    finalReadingLink: string;
-    confirm: string;
-    cancel: string;
-    saving: string;
-  };
+  locale: Locale;
+  tenant: { id: string; name: string; startedOn: string };
+  balance: number;
+  today: string;
 };
 
-/** "Tenant is leaving" with a confirm step: the balance warning and the final-reading reminder come first. */
-export function VacatePanel({ tenantId, labels }: Props) {
+/** "Tenant is leaving" with a confirm step: leave date, balance warning and the final-reading reminder. */
+export function VacatePanel({ locale, tenant, balance, today }: Props) {
   const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(vacateTenant, {});
 
   if (!open) {
     return (
@@ -31,7 +26,7 @@ export function VacatePanel({ tenantId, labels }: Props) {
         onClick={() => setOpen(true)}
         className="press min-h-12 w-full rounded-full bg-transparent px-5 text-base font-semibold text-ink/70 ring-1 ring-ink/15 outline-none active:bg-ink/5 focus-visible:ring-2 focus-visible:ring-green"
       >
-        {labels.open}
+        {t(locale, "roomPage.vacate")}
       </button>
     );
   }
@@ -39,45 +34,58 @@ export function VacatePanel({ tenantId, labels }: Props) {
   return (
     <section className="rise rounded-card bg-card p-5 shadow-soft" aria-labelledby="vacate-title">
       <h2 id="vacate-title" className="text-[1.1875rem] leading-snug font-semibold text-ink">
-        {labels.title}
+        {t(locale, "roomPage.vacateTitle", { name: tenant.name })}
       </h2>
-      <p className={`mt-3 rounded-2xl px-4 py-3 text-base leading-snug ${labels.balance ? "bg-amber-soft text-amber-deep" : "bg-well text-ink/75"}`}>
-        {labels.balance ?? labels.clear}
+      <p className={`mt-3 rounded-2xl px-4 py-3 text-base leading-snug ${balance > 0 ? "bg-amber-soft text-amber-deep" : "bg-well text-ink/75"}`}>
+        {balance > 0
+          ? t(locale, "roomPage.vacateBalance", { name: tenant.name, amount: formatINR(balance) })
+          : t(locale, "roomPage.vacateClear")}
       </p>
       <p className="mt-3 flex gap-3 px-1 text-base leading-snug text-ink/80">
         <MeterGlyph />
         <span>
-          {labels.finalReading}{" "}
+          {t(locale, "roomPage.finalReading")}{" "}
           <Link href="/readings" className="font-semibold text-green underline decoration-green/40 underline-offset-4">
-            {labels.finalReadingLink}
+            {t(locale, "roomPage.finalReadingLink")}
           </Link>
         </span>
       </p>
-      <form action={vacateTenant} className="mt-5 flex flex-col gap-2.5">
-        <input type="hidden" name="tenantId" value={tenantId} />
-        <ConfirmButton label={labels.confirm} saving={labels.saving} />
+      <form action={action} className="mt-5 flex flex-col gap-2.5">
+        <input type="hidden" name="tenantId" value={tenant.id} />
+        <div className="mb-2">
+          <Field
+            id="leftOn"
+            label={t(locale, "roomPage.leftOnLabel")}
+            error={state.errors?.leftOn ? t(locale, state.errors.leftOn) : state.formError ? t(locale, state.formError) : undefined}
+          >
+            <input
+              id="leftOn"
+              name="leftOn"
+              type="date"
+              min={tenant.startedOn}
+              max={today}
+              defaultValue={state.values?.leftOn ?? today}
+              aria-invalid={Boolean(state.errors?.leftOn)}
+              className={`${inputClass} appearance-none`}
+            />
+          </Field>
+        </div>
+        <button
+          type="submit"
+          disabled={pending}
+          className="press min-h-12 rounded-full bg-ink px-5 text-base font-semibold text-bg outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 disabled:opacity-60"
+        >
+          {pending ? t(locale, "tenant.saving") : t(locale, "roomPage.vacateConfirm")}
+        </button>
         <button
           type="button"
           onClick={() => setOpen(false)}
           className="press min-h-12 rounded-full px-5 text-base font-semibold text-ink/70 outline-none active:bg-ink/5 focus-visible:ring-2 focus-visible:ring-green"
         >
-          {labels.cancel}
+          {t(locale, "common.cancel")}
         </button>
       </form>
     </section>
-  );
-}
-
-function ConfirmButton({ label, saving }: { label: string; saving: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="press min-h-12 rounded-full bg-ink px-5 text-base font-semibold text-bg outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 disabled:opacity-60"
-    >
-      {pending ? saving : label}
-    </button>
   );
 }
 

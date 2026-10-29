@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { RoomList, RoomRow } from "@/components/RoomRow";
 import { requireSession } from "@/lib/auth/require-session";
-import { cycleText } from "@/lib/format";
+import { cycleText, formatDay } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
 import { formatINR } from "@/lib/money";
@@ -10,14 +10,20 @@ import { AddRoomForm } from "./AddRoomForm";
 
 async function loadRooms() {
   const repo = await getRepo();
-  const [rooms, tenants] = await Promise.all([repo.listRooms(), repo.listTenants({ activeOnly: true })]);
-  const tenantIn = new Map(tenants.map((tn) => [tn.roomId, tn]));
-  return rooms.sort((a, b) => a.number - b.number).map((room) => ({ room, tenant: tenantIn.get(room.id) ?? null }));
+  const [rooms, tenants] = await Promise.all([repo.listRooms(), repo.listTenants()]);
+  const tenantIn = new Map(tenants.filter((tn) => !tn.leftOn).map((tn) => [tn.roomId, tn]));
+  const numberOf = new Map(rooms.map((r) => [r.id, r.number]));
+  const former = tenants
+    .filter((tn) => tn.leftOn)
+    .map((tn) => ({ tenant: tn, roomNumber: numberOf.get(tn.roomId) ?? 0 }))
+    .sort((a, b) => (a.tenant.leftOn! < b.tenant.leftOn! ? 1 : a.tenant.leftOn! > b.tenant.leftOn! ? -1 : a.roomNumber - b.roomNumber));
+  const list = rooms.sort((a, b) => a.number - b.number).map((room) => ({ room, tenant: tenantIn.get(room.id) ?? null }));
+  return { list, former };
 }
 
 export default async function RoomsPage() {
   await requireSession();
-  const [locale, list] = await Promise.all([getLocale(), loadRooms()]);
+  const [locale, { list, former }] = await Promise.all([getLocale(), loadRooms()]);
   const occupied = list.filter((x) => x.tenant).length;
   const suggested = (list.at(-1)?.room.number ?? 0) + 1;
 
@@ -62,6 +68,26 @@ export default async function RoomsPage() {
       <div className="rise" style={{ "--i": 12 } as CSSProperties}>
         <AddRoomForm locale={locale} suggested={suggested} />
       </div>
+
+      {former.length > 0 ? (
+        <section className="mt-2 flex flex-col gap-2.5">
+          <h2 className="px-1 text-lg font-semibold text-ink">{t(locale, "rooms.formerTitle")}</h2>
+          <RoomList>
+            {former.map(({ tenant, roomNumber }) => (
+              <RoomRow
+                key={tenant.id}
+                index={12}
+                href={`/rooms/${roomNumber}?tenant=${tenant.id}`}
+                number={roomNumber}
+                muted
+                title={tenant.name}
+                detail={t(locale, "rooms.formerLine", { n: roomNumber, date: formatDay(locale, tenant.leftOn!) })}
+                trailing={<Chevron />}
+              />
+            ))}
+          </RoomList>
+        </section>
+      ) : null}
     </div>
   );
 }

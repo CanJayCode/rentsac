@@ -1,7 +1,6 @@
 import Link from "next/link";
+import type { HomeTab } from "@/lib/home";
 import { t, type Key, type Locale } from "@/lib/i18n";
-
-export type HomeTab = "all" | "rent" | "light";
 
 export const HOME_TABS: { tab: HomeTab; label: Key }[] = [
   { tab: "all", label: "tab.all" },

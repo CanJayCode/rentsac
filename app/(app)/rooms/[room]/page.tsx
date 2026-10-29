@@ -33,15 +33,23 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="rise flex items-center justify-between gap-3">
       <Link
         href={askedFor && active ? `/rooms/${room.number}` : "/rooms"}
-        className="rise -ml-1 inline-flex min-h-11 items-center gap-1 self-start rounded-full pr-3 pl-1 text-base font-semibold text-green outline-none active:bg-green/10 focus-visible:ring-2 focus-visible:ring-green"
+        className="-ml-1 inline-flex min-h-11 items-center gap-1 rounded-full pr-3 pl-1 text-base font-semibold text-green outline-none active:bg-green/10 focus-visible:ring-2 focus-visible:ring-green"
       >
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M10 3.5 5.5 8l4.5 4.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         {askedFor && active ? t(locale, "roomPage.backToRoom", { n: room.number }) : t(locale, "rooms.title")}
       </Link>
+        <Link
+          href={`/rooms/${room.number}/details`}
+          className="inline-flex min-h-11 items-center rounded-full px-3 text-base font-semibold text-ink/65 outline-none active:bg-ink/5 focus-visible:ring-2 focus-visible:ring-green"
+        >
+          {t(locale, "roomEdit.link")}
+        </Link>
+      </div>
 
       {justLeft ? <LeftNotice locale={locale} name={justLeft.name} /> : null}
 
@@ -73,23 +81,7 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
 
       {shown && !shown.leftOn ? (
         <div className="rise mt-2" style={{ "--i": 4 } as CSSProperties}>
-          <VacatePanel
-            tenantId={shown.id}
-            labels={{
-              open: t(locale, "roomPage.vacate"),
-              title: t(locale, "roomPage.vacateTitle", { name: shown.name }),
-              balance:
-                balances.get(shown.id)!.total > 0
-                  ? t(locale, "roomPage.vacateBalance", { name: shown.name, amount: formatINR(balances.get(shown.id)!.total) })
-                  : null,
-              clear: t(locale, "roomPage.vacateClear"),
-              finalReading: t(locale, "roomPage.finalReading"),
-              finalReadingLink: t(locale, "roomPage.finalReadingLink"),
-              confirm: t(locale, "roomPage.vacateConfirm"),
-              cancel: t(locale, "common.cancel"),
-              saving: t(locale, "tenant.saving"),
-            }}
-          />
+          <VacatePanel locale={locale} tenant={shown} balance={balances.get(shown.id)!.total} today={today} />
         </div>
       ) : null}
     </div>

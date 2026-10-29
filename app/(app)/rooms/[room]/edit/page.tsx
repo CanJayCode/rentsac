@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { cycleText, formatDay } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
+import { rentTermsEditable } from "@/lib/rent";
 import { loadRoom } from "../data";
 import { TenantForm } from "./TenantForm";
 
@@ -11,7 +12,7 @@ export default async function TenantEditPage({ params }: PageProps<"/rooms/[room
   await requireSession();
   const [{ room: param }, locale] = await Promise.all([params, getLocale()]);
   const { repo, room, active, today } = await loadRoom(param);
-  const charged = active ? (await repo.listCharges(active.id)).some((c) => c.kind === "rent") : false;
+  const locked = active ? !(await rentTermsEditable(repo, active.id)) : false;
 
   return (
     <div className="flex flex-col gap-5">
@@ -34,9 +35,9 @@ export default async function TenantEditPage({ params }: PageProps<"/rooms/[room
         locale={locale}
         roomNumber={room.number}
         tenant={active}
-        defaults={{ startedOn: today }}
+        today={today}
         locked={
-          active && charged
+          active && locked
             ? { cycle: cycleText(locale, active.cycleStartDay), startedOn: formatDay(locale, active.startedOn) }
             : null
         }

@@ -206,10 +206,6 @@ html:lang(mr) .font-display {
   background-color: var(--well);
 }
 
-.window {
-  transition: fill 240ms ease-out;
-}
-
 @keyframes rise {
   from {
     opacity: 0;
@@ -226,8 +222,7 @@ html:lang(mr) .font-display {
     animation: none;
   }
   .press,
-  .row-press,
-  .window {
+  .row-press {
     transition: none;
   }
   .press:active {
