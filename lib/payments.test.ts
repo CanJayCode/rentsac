@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { allocate, pending } from "./ledger";
-import { editPayment, paymentProblems, recordPayment, removePayment, type PaymentInput } from "./payments";
+import { editPayment, paymentProblems, recordPayment, removePayment, splitFromForm, type PaymentInput } from "./payments";
 import { createMemoryRepo } from "./repo/memory";
 import type { Repo, Tenant } from "./repo/types";
 import { rentTermsEditable } from "./rent";
@@ -160,5 +160,21 @@ describe("editPayment and removePayment", () => {
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ id: p.id, deletedAt: "2026-10-30" });
     expect((await pendingNow()).total).toBe(3300);
+  });
+});
+
+describe("splitFromForm", () => {
+  it("in Both mode a blank cash or PhonePe box counts as 0", () => {
+    expect(splitFromForm("both", "500", "", "500")).toEqual({ amount: 500, cash: 0, upi: 500 });
+    expect(splitFromForm("both", "500", "500", "  ")).toEqual({ amount: 500, cash: 500, upi: 0 });
+    expect(paymentProblems({ ...splitFromForm("both", "500", "", "500"), paidOn: "2026-10-30", target: "auto" }, "2026-10-30")).toEqual({});
+  });
+  it("still rejects junk in a split box, and a blank amount", () => {
+    expect(splitFromForm("both", "500", "abc", "500").cash).toBeNaN();
+    expect(splitFromForm("both", "", "", "").amount).toBeNaN();
+  });
+  it("cash and PhonePe modes ignore the split boxes", () => {
+    expect(splitFromForm("cash", "300", "1", "2")).toEqual({ amount: 300, cash: 300, upi: 0 });
+    expect(splitFromForm("upi", "300", "1", "2")).toEqual({ amount: 300, cash: 0, upi: 300 });
   });
 });

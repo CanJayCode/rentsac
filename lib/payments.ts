@@ -42,6 +42,27 @@ export class PaymentError extends Error {
   }
 }
 
+/** Rupees as typed: digits, with spaces or Indian commas allowed. Anything else is NaN. */
+export function parseRupees(s: string): number {
+  const clean = s.replace(/[\s,]/g, "");
+  return /^\d{1,9}$/.test(clean) ? Number(clean) : Number.NaN;
+}
+
+/** Like parseRupees, but a blank box counts as 0 (the cash or PhonePe box left empty in "Both" mode). */
+export function parseRupeesBlankIsZero(s: string): number {
+  return s.trim() === "" ? 0 : parseRupees(s);
+}
+
+/** The amount, cash and PhonePe parts for the mode chosen on the form. Blank split boxes are 0. */
+export function splitFromForm(mode: string, amountText: string, cashText: string, upiText: string) {
+  const amount = parseRupees(amountText);
+  return {
+    amount,
+    cash: mode === "upi" ? 0 : mode === "both" ? parseRupeesBlankIsZero(cashText) : amount,
+    upi: mode === "upi" ? amount : mode === "both" ? parseRupeesBlankIsZero(upiText) : 0,
+  };
+}
+
 const whole = (n: number) => Number.isInteger(n) && n >= 0 && n <= PAYMENT_MAX;
 
 /** Everything wrong with these fields, one problem per field; empty when they are fine. */

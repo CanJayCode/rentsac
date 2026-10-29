@@ -10,6 +10,7 @@ import {
   paymentProblems,
   recordPayment,
   removePayment,
+  splitFromForm,
   type PaymentField,
   type PaymentFields,
   type PaymentProblem,
@@ -48,12 +49,6 @@ function field(data: FormData, name: string): string {
   return typeof v === "string" ? v : "";
 }
 
-/** Rupees as typed: digits, with spaces or Indian commas allowed. Anything else is NaN. */
-function rupees(s: string): number {
-  const clean = s.replace(/[\s,]/g, "");
-  return /^\d{1,9}$/.test(clean) ? Number(clean) : Number.NaN;
-}
-
 /** The tenant named by the form, only when it lives (or lived) in the room the form came from. */
 async function tenantInRoom(repo: Repo, data: FormData): Promise<{ tenant: Tenant; roomNumber: number } | null> {
   const tenant = await repo.getTenant(field(data, "tenantId"));
@@ -82,12 +77,10 @@ export async function savePayment(_prev: PaymentFormState, data: FormData): Prom
     target: field(data, "target"),
   };
 
-  const amount = rupees(values.amount);
+  const split = splitFromForm(mode, values.amount, values.cash, values.upi);
   const fields: PaymentFields = {
-    amount,
+    ...split,
     paidOn: values.paidOn,
-    cash: mode === "upi" ? 0 : mode === "both" ? rupees(values.cash) : amount,
-    upi: mode === "upi" ? amount : mode === "both" ? rupees(values.upi) : 0,
     note: values.note,
     // Checked by paymentProblems with everything else.
     target: values.target as PaymentTarget,
