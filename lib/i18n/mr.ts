@@ -2,7 +2,7 @@
 import type { Key } from "./index";
 
 export const mr: Record<Key, string> = {
-  "app.name": "Rentsac",
+  "app.name": "Shanti Vishva",
   "app.tagline": "भाडे आणि लाईट बिल, अगदी सोपे.",
 
   "nav.label": "मुख्य मेनू",
@@ -252,10 +252,10 @@ export const mr: Record<Key, string> = {
   "settings.pin.error.locked": "खूप चुकीचे प्रयत्न झाले. {minutes} मिनिटांनी पुन्हा प्रयत्न करा.",
   "settings.pin.error.failed": "काहीतरी चुकले. पुन्हा प्रयत्न करा.",
   "settings.language.title": "भाषा",
-  "settings.lock.title": "Rentsac लॉक करा",
+  "settings.lock.title": "Shanti Vishva लॉक करा",
   "settings.lock.hint": "या फोनवर ॲप लॉक होईल. पुन्हा उघडण्यासाठी पिन लागेल.",
   "settings.lock.button": "आता लॉक करा",
-  "settings.about.version": "Rentsac आवृत्ती {version}",
+  "settings.about.version": "Shanti Vishva आवृत्ती {version}",
   "settings.saving": "जतन करत आहे…",
 
   "share.title": "हे बिल पाठवा",
@@ -270,7 +270,7 @@ export const mr: Record<Key, string> = {
   "lock.unlockTitle": "तुमचा पिन टाका",
   "lock.unlockHint": "इमारतीचे हिशेब उघडण्यासाठी सहा अंकी पिन टाका.",
   "lock.chooseTitle": "पिन निवडा",
-  "lock.chooseHint": "लक्षात राहतील असे सहा अंक निवडा. Rentsac उघडताना दरवेळी हाच पिन लागेल.",
+  "lock.chooseHint": "लक्षात राहतील असे सहा अंक निवडा. Shanti Vishva उघडताना दरवेळी हाच पिन लागेल.",
   "lock.confirmTitle": "पिन पुन्हा टाका",
   "lock.confirmHint": "तेच सहा अंक पुन्हा एकदा टाका.",
   "lock.codeTitle": "सेटअप कोड टाका",
@@ -280,7 +280,7 @@ export const mr: Record<Key, string> = {
   "lock.wrongPin": "पिन बरोबर नाही. पुन्हा प्रयत्न करा.",
   "lock.mismatch": "दोन्ही पिन जुळले नाहीत. पुन्हा निवडा.",
   "lock.wrongCode": "सेटअप कोड बरोबर नाही. तपासून पुन्हा प्रयत्न करा.",
-  "lock.alreadySet": "पिन आधीच ठरवलेला आहे. Rentsac उघडण्यासाठी तो टाका.",
+  "lock.alreadySet": "पिन आधीच ठरवलेला आहे. Shanti Vishva उघडण्यासाठी तो टाका.",
   "lock.notSet": "अजून पिन ठरवलेला नाही. आधी एक निवडा.",
   "lock.lockedTitle": "खूप वेळा चुकीचा पिन टाकला",
   "lock.retry.one": "1 मिनिटाने पुन्हा प्रयत्न करा.",

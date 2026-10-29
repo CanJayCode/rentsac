@@ -1,7 +1,7 @@
 // English dictionary. `Key` is derived from this file, so every key added here must also be
 // added to mr.ts (the type check and i18n.test.ts both enforce it).
 export const en = {
-  "app.name": "Rentsac",
+  "app.name": "Shanti Vishva",
   "app.tagline": "Rent and light bills, made simple.",
 
   "nav.label": "Main navigation",
@@ -251,10 +251,10 @@ export const en = {
   "settings.pin.error.locked": "Too many wrong tries. Try again in {minutes} min.",
   "settings.pin.error.failed": "Something went wrong. Try again.",
   "settings.language.title": "Language",
-  "settings.lock.title": "Lock Rentsac",
+  "settings.lock.title": "Lock Shanti Vishva",
   "settings.lock.hint": "Locks the app on this phone. You will need your PIN to open it again.",
   "settings.lock.button": "Lock now",
-  "settings.about.version": "Rentsac version {version}",
+  "settings.about.version": "Shanti Vishva version {version}",
   "settings.saving": "Saving…",
 
   "share.title": "Share this bill",
@@ -269,7 +269,7 @@ export const en = {
   "lock.unlockTitle": "Enter your PIN",
   "lock.unlockHint": "Six digits to open the building's accounts.",
   "lock.chooseTitle": "Choose a PIN",
-  "lock.chooseHint": "Pick six digits you will remember. You will use them each time you open Rentsac.",
+  "lock.chooseHint": "Pick six digits you will remember. You will use them each time you open Shanti Vishva.",
   "lock.confirmTitle": "Confirm PIN",
   "lock.confirmHint": "Enter the same six digits again.",
   "lock.codeTitle": "Enter the setup code",
@@ -279,7 +279,7 @@ export const en = {
   "lock.wrongPin": "That PIN is not right. Try again.",
   "lock.mismatch": "The two PINs did not match. Choose again.",
   "lock.wrongCode": "That setup code is not right. Check it and try again.",
-  "lock.alreadySet": "A PIN is already set. Enter it to open Rentsac.",
+  "lock.alreadySet": "A PIN is already set. Enter it to open Shanti Vishva.",
   "lock.notSet": "No PIN is set yet. Choose one first.",
   "lock.lockedTitle": "Too many wrong tries",
   "lock.retry.one": "Try again in 1 minute.",

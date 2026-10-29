@@ -16,10 +16,10 @@ const hind = Hind({
 });
 
 export const metadata: Metadata = {
-  title: "Rentsac",
+  title: "Shanti Vishva",
   description: "Rent and light-bill tracker",
   icons: { apple: "/icons/apple-touch-icon.png" },
-  appleWebApp: { capable: true, title: "Rentsac", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Shanti Vishva", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

@@ -6,7 +6,7 @@ import { getLocale } from "@/lib/i18n/server";
 import { getRepo } from "@/lib/repo";
 import { LockScreen } from "./LockScreen";
 
-export const metadata: Metadata = { title: "Rentsac" };
+export const metadata: Metadata = { title: "Shanti Vishva" };
 
 /** Request-time state for the lock screen (kept out of the component body: it reads the clock). */
 async function loadLockState() {

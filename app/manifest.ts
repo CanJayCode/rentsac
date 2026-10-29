@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Rentsac",
-    short_name: "Rentsac",
+    name: "Shanti Vishva",
+    short_name: "Shanti Vishva",
     description: "Rent and light-bill tracker",
     start_url: "/",
     display: "standalone",
