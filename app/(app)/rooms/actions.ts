@@ -15,7 +15,7 @@ import {
 import { getRepo } from "@/lib/repo";
 import type { Repo } from "@/lib/repo/types";
 import { todayIST } from "@/lib/today";
-import { isRealDate, validateRoom, validateTenant, type RoomField, type TenantField } from "@/lib/validate";
+import { isRealDate, parseDate, validateRoom, validateTenant, type RoomField, type TenantField } from "@/lib/validate";
 
 export type FormState<F extends string> = {
   errors?: Partial<Record<F, Key>>;
@@ -140,9 +140,10 @@ export async function vacateTenant(_prev: FormState<"leftOn">, data: FormData): 
   if (tenant.leftOn) redirect(`/rooms/${room?.number ?? ""}`);
 
   const today = todayIST();
-  const leftOn = field(data, "leftOn").trim();
-  if (!isRealDate(leftOn) || leftOn < tenant.startedOn || leftOn > today) {
-    return { errors: { leftOn: "form.error.leftOn" }, values: { leftOn } };
+  const rawLeftOn = field(data, "leftOn").trim();
+  const leftOn = parseDate(rawLeftOn);
+  if (!leftOn || leftOn < tenant.startedOn || leftOn > today) {
+    return { errors: { leftOn: "form.error.leftOn" }, values: { leftOn: rawLeftOn } };
   }
   await closeTenancy(repo, tenant, leftOn, today);
   revalidatePath("/", "layout");

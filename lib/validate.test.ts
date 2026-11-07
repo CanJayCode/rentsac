@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { isRealDate, validateRoom, validateTenant } from "./validate";
+import { isRealDate, parseDate, validateRoom, validateTenant } from "./validate";
 
 const good = { name: "  Vaibhav Kusekar ", rentAmount: "3000", cycleStartDay: "26", startedOn: "2026-10-01" };
+
+describe("parseDate", () => {
+  it("accepts ISO dates and returns them as-is", () => {
+    expect(parseDate("2026-10-28")).toBe("2026-10-28");
+    expect(parseDate("2028-02-29")).toBe("2028-02-29");
+  });
+
+  it("parses DD/MM/YYYY and DD-MM-YYYY to ISO", () => {
+    expect(parseDate("28/10/2026")).toBe("2026-10-28");
+    expect(parseDate("1/5/2026")).toBe("2026-05-01");
+    expect(parseDate("01-05-2026")).toBe("2026-05-01");
+    expect(parseDate("01102026")).toBe("2026-10-01");
+  });
+
+  it("rejects invalid dates", () => {
+    expect(parseDate("31/02/2026")).toBeNull();
+    expect(parseDate("invalid")).toBeNull();
+    expect(parseDate("")).toBeNull();
+  });
+});
 
 describe("isRealDate", () => {
   it("accepts real dates and rejects impossible or malformed ones", () => {

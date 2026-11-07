@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { DateInput } from "@/components/DateInput";
 import { Field, inputClass } from "@/components/Field";
 import { t, type Key, type Locale } from "@/lib/i18n";
 
@@ -21,15 +22,14 @@ export function NewRoundForm({ locale, action, today, min }: Props) {
   return (
     <form action={formAction} noValidate className="rise flex flex-col gap-5 rounded-card bg-card p-5 shadow-soft">
       <Field id="date" label={t(locale, "readings.date")} hint={t(locale, "readings.dateHint")} error={state.error ? t(locale, state.error) : undefined}>
-        <input
+        <DateInput
           id="date"
           name="date"
-          type="date"
-          max={today}
-          min={min ?? undefined}
           value={date}
-          onChange={(e) => setDate(e.target.value)}
-          aria-invalid={Boolean(state.error)}
+          onChange={setDate}
+          min={min ?? undefined}
+          max={today}
+          ariaInvalid={Boolean(state.error)}
           className={`${inputClass} appearance-none`}
         />
       </Field>

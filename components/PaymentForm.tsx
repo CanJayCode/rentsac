@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useActionState, useEffect, useRef, useState, type ReactNode } from "react";
+import { DateInput } from "@/components/DateInput";
 import { Field, inputClass } from "@/components/Field";
 import { t, type Key, type Locale } from "@/lib/i18n";
 import { allocate, pending, type Charge, type Payment } from "@/lib/ledger";
@@ -120,14 +121,13 @@ export function PaymentForm({ locale, action, roomNumber, tenantId, today, charg
         ) : null}
 
         <Field id="paidOn" label={t(locale, "pay.date")} error={err(state.errors?.paidOn)}>
-          <input
+          <DateInput
             id="paidOn"
             name="paidOn"
-            type="date"
             max={today}
             value={paidOn}
-            onChange={(e) => setPaidOn(e.target.value)}
-            aria-invalid={Boolean(state.errors?.paidOn)}
+            onChange={setPaidOn}
+            ariaInvalid={Boolean(state.errors?.paidOn)}
             className={`${inputClass} appearance-none`}
           />
         </Field>

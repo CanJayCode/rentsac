@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { DateInput } from "@/components/DateInput";
 import { Field, inputClass } from "@/components/Field";
 import { formatDay } from "@/lib/format";
 import { t, type Key, type Locale } from "@/lib/i18n";
@@ -152,14 +153,12 @@ export function TenantForm({ locale, roomNumber, today, tenant, locked }: Props)
           </fieldset>
 
           <Field id="startedOn" label={t(locale, "tenant.startedOn")} hint={t(locale, "tenant.startedOnHint")} error={err(state.errors?.startedOn)}>
-            <input
+            <DateInput
               id="startedOn"
               name="startedOn"
-              type="date"
-              max="9999-12-31"
               value={startedOn}
-              onChange={(e) => setStartedOn(e.target.value)}
-              aria-invalid={Boolean(state.errors?.startedOn)}
+              onChange={setStartedOn}
+              ariaInvalid={Boolean(state.errors?.startedOn)}
               className={`${inputClass} appearance-none`}
             />
           </Field>

@@ -333,7 +333,7 @@ export function runContract(
         tenantId: tenant.id,
         kind: "light",
         amount: 250,
-        on: "2026-04-12",
+        dueDate: "2026-04-12",
         roundId: round.id,
       });
       expect((await repo.listCharges(tenant.id)).filter((c) => c.roundId === round.id)).toHaveLength(1);

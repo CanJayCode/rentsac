@@ -31,6 +31,33 @@ export function isRealDate(s: string): boolean {
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
 }
 
+/**
+ * Parses a date string that may be YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY or DDMMYYYY into YYYY-MM-DD.
+ * Returns null if the date is invalid or non-existent.
+ */
+export function parseDate(s: unknown): string | null {
+  const str = text(s);
+  if (!str) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return isRealDate(str) ? str : null;
+  }
+  const m = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  if (m) {
+    let [, d, mo, y] = m;
+    if (y.length === 2) y = `20${y}`;
+    if (y.length !== 4) return null;
+    const iso = `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    return isRealDate(iso) ? iso : null;
+  }
+  const mDigits = str.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (mDigits) {
+    const [, d, mo, y] = mDigits;
+    const iso = `${y}-${mo}-${d}`;
+    return isRealDate(iso) ? iso : null;
+  }
+  return null;
+}
+
 export function validateTenant(raw: Record<string, unknown>): Validated<TenantInput, TenantField> {
   const errors: Partial<Record<TenantField, Key>> = {};
 
@@ -44,11 +71,11 @@ export function validateTenant(raw: Record<string, unknown>): Validated<TenantIn
   const cycleStartDay = wholeNumber(raw.cycleStartDay);
   if (cycleStartDay === null || cycleStartDay < 1 || cycleStartDay > 31) errors.cycleStartDay = "form.error.cycleDay";
 
-  const startedOn = text(raw.startedOn);
-  if (!isRealDate(startedOn)) errors.startedOn = "form.error.date";
+  const startedOn = parseDate(raw.startedOn);
+  if (!startedOn) errors.startedOn = "form.error.date";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, value: { name, rentAmount: rentAmount!, cycleStartDay: cycleStartDay!, startedOn } };
+  return { ok: true, value: { name, rentAmount: rentAmount!, cycleStartDay: cycleStartDay!, startedOn: startedOn! } };
 }
 
 export function validateRoom(raw: Record<string, unknown>): Validated<RoomInput, RoomField> {

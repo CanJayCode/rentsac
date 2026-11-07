@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
+import { DateInput } from "@/components/DateInput";
 import { Field, inputClass } from "@/components/Field";
 import { t, type Locale } from "@/lib/i18n";
 import { formatINR } from "@/lib/money";
@@ -62,14 +63,13 @@ export function VacatePanel({ locale, tenant, balance, today, readingTaken }: Pr
             label={t(locale, "roomPage.leftOnLabel")}
             error={state.errors?.leftOn ? t(locale, state.errors.leftOn) : state.formError ? t(locale, state.formError) : undefined}
           >
-            <input
+            <DateInput
               id="leftOn"
               name="leftOn"
-              type="date"
               min={tenant.startedOn}
               max={today}
-              defaultValue={state.values?.leftOn ?? today}
-              aria-invalid={Boolean(state.errors?.leftOn)}
+              value={state.values?.leftOn ?? today}
+              ariaInvalid={Boolean(state.errors?.leftOn)}
               className={`${inputClass} appearance-none`}
             />
           </Field>

@@ -19,6 +19,7 @@ import {
 import { getRepo } from "@/lib/repo";
 import type { Repo, Tenant } from "@/lib/repo/types";
 import { todayIST } from "@/lib/today";
+import { parseDate } from "@/lib/validate";
 import type { FormState } from "../actions";
 
 export type PaymentFormState = FormState<PaymentField>;
@@ -67,9 +68,10 @@ function roomUrl(roomNumber: number, tenant: Tenant, notice: string, paymentId: 
 export async function savePayment(_prev: PaymentFormState, data: FormData): Promise<PaymentFormState> {
   await assertSessionAction();
   const mode = field(data, "mode");
+  const rawPaidOn = field(data, "paidOn").trim();
   const values = {
     amount: field(data, "amount"),
-    paidOn: field(data, "paidOn").trim(),
+    paidOn: parseDate(rawPaidOn) ?? rawPaidOn,
     mode,
     cash: field(data, "cash"),
     upi: field(data, "upi"),

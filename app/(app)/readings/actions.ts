@@ -9,6 +9,7 @@ import { MAIN_METER_KEYS, type MainMeterKey } from "@/lib/repo/types";
 import { saveRound, validateRoundDate, type RoundInput, type RoundState } from "@/lib/rounds";
 import { getRate } from "@/lib/settings";
 import { todayIST } from "@/lib/today";
+import { parseDate } from "@/lib/validate";
 
 export type StartState = { error?: Key; date?: string };
 
@@ -20,11 +21,12 @@ function field(data: FormData, name: string): string {
 /** Creates a round for the chosen date and opens it. A repeated tap reuses the round it just made. */
 export async function startRound(_prev: StartState, data: FormData): Promise<StartState> {
   await assertSessionAction();
-  const date = field(data, "date").trim();
+  const rawDate = field(data, "date").trim();
+  const date = parseDate(rawDate) ?? rawDate;
   const repo = await getRepo();
   const [newest] = await repo.listRounds();
   const error = validateRoundDate(date, todayIST(), newest?.date ?? null);
-  if (error) return { error, date };
+  if (error) return { error, date: rawDate };
 
   // A double tap or a resubmit on slow data: the newest round is this date's, open and still empty.
   if (newest && newest.date === date && newest.status === "open") {
