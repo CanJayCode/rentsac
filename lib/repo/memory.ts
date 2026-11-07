@@ -72,6 +72,14 @@ export function createMemoryRepo(): Repo {
     async vacateTenant(id, on) {
       need(tenants.find((t) => t.id === id), "Tenant", id).leftOn = on;
     },
+    async deleteTenant(id) {
+      const at = tenants.findIndex((t) => t.id === id);
+      if (at === -1) throw new Error(`Tenant ${id} not found`);
+      tenants.splice(at, 1);
+      // Remove all charges and payments for this tenant
+      for (let i = charges.length - 1; i >= 0; i--) if (charges[i].tenantId === id) charges.splice(i, 1);
+      for (let i = payments.length - 1; i >= 0; i--) if (payments[i].tenantId === id) payments.splice(i, 1);
+    },
 
     async listCharges(tenantId) {
       return charges.filter((c) => c.tenantId === tenantId).map(copy);

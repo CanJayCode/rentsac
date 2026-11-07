@@ -404,6 +404,29 @@ export function runContract(
       expect(await repo.recentFailures(ip, 0)).toEqual([]);
     });
 
+    it("deleteTenant removes the tenant, their charges, and their payments", async () => {
+      const room = (await repo.listRooms())[0];
+      const t = await repo.saveTenant({
+        roomId: room.id,
+        name: "Temporary",
+        rentAmount: 3000,
+        cycleStartDay: 1,
+        startedOn: "2026-01-01",
+      });
+      await repo.addCharge(rentCharge(t.id, "2026-01-01"));
+      await repo.addPayment(payment(t.id, 3000), "temp-key");
+
+      expect(await repo.getTenant(t.id)).not.toBeNull();
+      expect(await repo.listCharges(t.id)).toHaveLength(1);
+      expect(await repo.listPayments(t.id)).toHaveLength(1);
+
+      await repo.deleteTenant(t.id);
+
+      expect(await repo.getTenant(t.id)).toBeNull();
+      expect(await repo.listCharges(t.id)).toHaveLength(0);
+      expect(await repo.listPayments(t.id)).toHaveLength(0);
+    });
+
     it("returned objects are copies; mutating them does not change stored state", async () => {
       const t = await repo.getTenant(tenantId);
       t!.name = "Hacked";

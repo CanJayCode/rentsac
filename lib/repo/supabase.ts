@@ -179,6 +179,13 @@ export function createSupabaseRepo(config: SupabaseRepoConfig = {}): Repo {
         id,
       );
     },
+    async deleteTenant(id) {
+      await mustOne(db.from("tenants").select("id").eq("id", id).maybeSingle(), "Tenant", id);
+      // Cascade: charges and payments first (FK constraint), then the tenant row
+      await list(db.from("charges").delete().eq("tenant_id", id), "deleteTenant:charges");
+      await list(db.from("payments").delete().eq("tenant_id", id), "deleteTenant:payments");
+      await list(db.from("tenants").delete().eq("id", id), "deleteTenant:tenant");
+    },
 
     async listCharges(tenantId) {
       const data = await list(

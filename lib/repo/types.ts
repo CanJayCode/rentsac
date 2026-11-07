@@ -55,6 +55,8 @@ export interface Repo {
   saveTenant(t: Omit<Tenant, "id"> & { id?: string }): Promise<Tenant>;
   /** Sets leftOn; the tenant's charges and payments stay. */
   vacateTenant(id: string, on: string): Promise<void>;
+  /** Hard-deletes the tenant and all their charges and payments. */
+  deleteTenant(id: string): Promise<void>;
 
   listCharges(tenantId: string): Promise<RepoCharge[]>;
   /**

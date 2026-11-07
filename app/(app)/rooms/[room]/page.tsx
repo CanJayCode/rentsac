@@ -16,6 +16,8 @@ import { tenantAccount, tenantBalance, type Account, type Balance } from "@/lib/
 import type { Repo, RepoPayment, Tenant } from "@/lib/repo/types";
 import { billMessage } from "@/lib/share";
 import { deletePayment } from "./actions";
+import { deleteTenantAction } from "../actions";
+import { DeleteTenant } from "@/components/DeleteTenant";
 import { loadRoom } from "./data";
 import { VacatePanel } from "./VacatePanel";
 
@@ -125,13 +127,32 @@ export default async function RoomPage({ params, searchParams }: PageProps<"/roo
       ) : null}
 
       {shown && !shown.leftOn ? (
-        <div className="rise mt-2" style={{ "--i": 5 } as CSSProperties}>
+        <div className="rise mt-2 flex flex-col items-center gap-3" style={{ "--i": 5 } as CSSProperties}>
           <VacatePanel
             locale={locale}
             tenant={shown}
             balance={balances.get(shown.id)!.total}
             today={today}
             readingTaken={await hasLatestReading(repo, room.id)}
+          />
+          <DeleteTenant
+            locale={locale}
+            tenantId={shown.id}
+            tenantName={shown.name}
+            roomNumber={room.number}
+            action={deleteTenantAction}
+          />
+        </div>
+      ) : null}
+
+      {shown && shown.leftOn ? (
+        <div className="rise mt-4 flex justify-center" style={{ "--i": 5 } as CSSProperties}>
+          <DeleteTenant
+            locale={locale}
+            tenantId={shown.id}
+            tenantName={shown.name}
+            roomNumber={room.number}
+            action={deleteTenantAction}
           />
         </div>
       ) : null}

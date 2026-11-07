@@ -133,6 +133,17 @@ export async function saveTenant(
   redirect(`/rooms/${room.number}`);
 }
 
+export async function deleteTenantAction(_prev: { error?: Key }, data: FormData): Promise<{ error?: Key }> {
+  await assertSessionAction();
+  const repo = await getRepo();
+  const tenant = await repo.getTenant(field(data, "tenantId"));
+  if (!tenant) return { error: "form.error.failed" };
+  const room = (await repo.listRooms()).find((r) => r.id === tenant.roomId);
+  await repo.deleteTenant(tenant.id);
+  revalidatePath("/", "layout");
+  redirect(`/rooms/${room?.number ?? ""}`);
+}
+
 export async function vacateTenant(_prev: FormState<"leftOn">, data: FormData): Promise<FormState<"leftOn">> {
   await assertSessionAction();
   const repo = await getRepo();
