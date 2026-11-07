@@ -341,6 +341,16 @@ export function createSupabaseRepo(config: SupabaseRepoConfig = {}): Repo {
         roundId,
       );
     },
+    async deleteRound(roundId) {
+      // Guard: round must exist
+      await mustOne(db.from("rounds").select("id").eq("id", roundId).maybeSingle(), "Round", roundId);
+      // Delete all light charges for this round (removes them from tenant ledgers)
+      await list(db.from("charges").delete().eq("kind", "light").eq("round_id", roundId), "deleteRound:charges");
+      // Delete readings, then the round
+      await list(db.from("readings").delete().eq("round_id", roundId), "deleteRound:readings");
+      await list(db.from("main_readings").delete().eq("round_id", roundId), "deleteRound:mainReadings");
+      await list(db.from("rounds").delete().eq("id", roundId), "deleteRound:round");
+    },
     async lastReading(roomId, beforeRoundId) {
       let candidates = await listRounds(); // newest first
       if (beforeRoundId) {

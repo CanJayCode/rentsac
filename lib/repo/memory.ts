@@ -148,6 +148,19 @@ export function createMemoryRepo(): Repo {
     async finishRound(roundId) {
       need(rounds.find((r) => r.id === roundId), "Round", roundId).status = "done";
     },
+    async deleteRound(roundId) {
+      const at = rounds.findIndex((r) => r.id === roundId);
+      if (at === -1) throw new Error(`Round ${roundId} not found`);
+      // Delete all light charges for this round first
+      const chargeIndexes = charges.reduce<number[]>((acc, c, i) => { if (c.kind === "light" && c.roundId === roundId) acc.push(i); return acc; }, []);
+      for (let i = chargeIndexes.length - 1; i >= 0; i--) charges.splice(chargeIndexes[i], 1);
+      // Remove readings
+      const readingIndexes = readings.reduce<number[]>((acc, r, i) => { if (r.roundId === roundId) acc.push(i); return acc; }, []);
+      for (let i = readingIndexes.length - 1; i >= 0; i--) readings.splice(readingIndexes[i], 1);
+      const mainIndexes = mainReadings.reduce<number[]>((acc, r, i) => { if (r.roundId === roundId) acc.push(i); return acc; }, []);
+      for (let i = mainIndexes.length - 1; i >= 0; i--) mainReadings.splice(mainIndexes[i], 1);
+      rounds.splice(at, 1);
+    },
     async lastReading(roomId, beforeRoundId) {
       let candidates = roundsOldestFirst();
       if (beforeRoundId) {

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeleteRound } from "@/components/DeleteRound";
 import { RoundEntry } from "@/components/ReadingList";
 import { requireSession } from "@/lib/auth/require-session";
 import { formatDay } from "@/lib/format";
@@ -9,7 +10,7 @@ import { formatINR } from "@/lib/money";
 import { getRepo } from "@/lib/repo";
 import { loadRound } from "@/lib/rounds";
 import { getRate } from "@/lib/settings";
-import { saveRoundAction } from "../actions";
+import { deleteRoundAction, saveRoundAction } from "../actions";
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
@@ -59,6 +60,14 @@ export default async function RoundPage({ params, searchParams }: PageProps<"/re
       ) : bills.length > 0 ? (
         <p className="rise px-1 text-[0.9375rem] leading-snug text-ink/65">{t(locale, "readings.lockedHint")}</p>
       ) : null}
+
+      {/* Allow deleting any round — its light charges are removed along with it */}
+      <DeleteRound
+        locale={locale}
+        roundId={view.round.id}
+        date={formatDay(locale, view.round.date)}
+        action={deleteRoundAction}
+      />
 
       {/* Keyed on each save, so the list starts again from what was stored. */}
       <RoundEntry

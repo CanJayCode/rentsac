@@ -299,6 +299,51 @@ export function runContract(
       expect(await repo.lastReading(room, r1.id)).toBeNull();
     });
 
+    it("deleteRound deletes an unbilled round and its readings", async () => {
+      const round = await repo.createRound("2026-04-10");
+      const [r1] = await repo.listRooms();
+      await repo.saveRoundReadings(round.id, [{ roomId: r1.id, value: 120, baseReset: false }]);
+      await repo.saveMainReadings(round.id, [{ key: "motor", value: 30 }]);
+
+      expect(await repo.getRound(round.id)).not.toBeNull();
+      expect(await repo.listReadings(round.id)).toHaveLength(1);
+      expect(await repo.listMainReadings(round.id)).toHaveLength(1);
+
+      await repo.deleteRound(round.id);
+
+      expect(await repo.getRound(round.id)).toBeNull();
+      expect(await repo.listReadings(round.id)).toHaveLength(0);
+      expect(await repo.listMainReadings(round.id)).toHaveLength(0);
+      expect((await repo.listRounds()).some((r) => r.id === round.id)).toBe(false);
+    });
+
+    it("deleteRound throws for unknown id but succeeds even when billed charges exist", async () => {
+      await expect(repo.deleteRound(crypto.randomUUID())).rejects.toThrow();
+
+      const round = await repo.createRound("2026-04-12");
+      const [r1] = await repo.listRooms();
+      const tenant = await repo.saveTenant({
+        roomId: r1.id,
+        name: "Test Tenant",
+        rentAmount: 5000,
+        cycleStartDay: 1,
+        startedOn: "2026-01-01",
+      });
+      await repo.addCharge({
+        tenantId: tenant.id,
+        kind: "light",
+        amount: 250,
+        on: "2026-04-12",
+        roundId: round.id,
+      });
+      expect((await repo.listCharges(tenant.id)).filter((c) => c.roundId === round.id)).toHaveLength(1);
+
+      // Should succeed: light charges are deleted along with the round
+      await repo.deleteRound(round.id);
+      expect(await repo.getRound(round.id)).toBeNull();
+      expect((await repo.listCharges(tenant.id)).filter((c) => c.roundId === round.id)).toHaveLength(0);
+    });
+
     it("settings round trip", async () => {
       const key = `rate-${crypto.randomUUID()}`;
       expect(await repo.getSetting(key)).toBeNull();

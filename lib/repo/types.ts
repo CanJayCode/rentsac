@@ -96,6 +96,11 @@ export interface Repo {
   listMainReadings(roundId: string): Promise<MainReading[]>;
   finishRound(roundId: string): Promise<void>;
   /**
+   * Hard-delete a round and its readings. Throws when the id is unknown or when
+   * the round has associated light charges (i.e. readings have already been billed).
+   */
+  deleteRound(roundId: string): Promise<void>;
+  /**
    * Value from the newest round that has a reading for the room. With
    * beforeRoundId, only rounds strictly older than that round count.
    */

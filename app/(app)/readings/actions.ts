@@ -37,6 +37,21 @@ export async function startRound(_prev: StartState, data: FormData): Promise<Sta
   redirect(`/readings/${round.id}`);
 }
 
+/** Hard-deletes a round and all its light charges. Redirects to the list on success. */
+export async function deleteRoundAction(_prev: { error?: Key }, data: FormData): Promise<{ error?: Key }> {
+  await assertSessionAction();
+  const roundId = field(data, "roundId");
+  if (!roundId) return { error: "readings.error.closed" };
+  const repo = await getRepo();
+  try {
+    await repo.deleteRound(roundId);
+  } catch {
+    return { error: "readings.delete.hasBills" };
+  }
+  revalidatePath("/readings");
+  redirect("/readings");
+}
+
 /** Saves what was typed in a round (rows left empty stay unread) and bills the rooms read. */
 export async function saveRoundAction(_prev: RoundState, data: FormData): Promise<RoundState> {
   await assertSessionAction();
