@@ -81,12 +81,14 @@ export async function saveTenant(
 ): Promise<FormState<TenantFormField>> {
   await assertSessionAction();
   const preset = field(data, "cyclePreset");
+  const skipHistory = field(data, "skipHistory") === "yes";
   const values = {
     name: field(data, "name"),
     rentAmount: field(data, "rentAmount"),
     cyclePreset: preset,
     cycleCustom: field(data, "cycleCustom"),
     startedOn: field(data, "startedOn"),
+    skipHistory: skipHistory ? "yes" : "",
   };
 
   const repo = await getRepo();
@@ -118,14 +120,15 @@ export async function saveTenant(
     (existing.cycleStartDay !== parsed.value.cycleStartDay || existing.startedOn !== parsed.value.startedOn);
   if (!locked && (!existing || termsChanged)) {
     const { dueCount } = rentPreview(parsed.value, today);
-    if (dueCount > MONTHS_CONFIRM_ABOVE && field(data, "confirmMonths") !== "yes") {
+    if (dueCount > MONTHS_CONFIRM_ABOVE && field(data, "confirmMonths") !== "yes" && !skipHistory) {
       return { errors: { confirmMonths: "form.error.confirmMonths" }, values };
     }
   }
 
   const tenant = await repo.saveTenant({ ...(existing ?? {}), ...parsed.value, roomId: room.id });
   if (termsChanged && !locked) await regenerateRentCharges(repo, tenant, today);
-  else await ensureRentCharges(repo, tenant, today);
+  else if (!skipHistory || existing) await ensureRentCharges(repo, tenant, today);
+  // skipHistory=yes on a new tenant → no past charges; they'll accrue naturally from today
   revalidatePath("/", "layout");
   redirect(`/rooms/${room.number}`);
 }

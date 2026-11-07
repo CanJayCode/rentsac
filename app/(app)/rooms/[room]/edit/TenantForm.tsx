@@ -39,13 +39,14 @@ export function TenantForm({ locale, roomNumber, today, tenant, locked }: Props)
   const [custom, setCustom] = useState(v?.cycleCustom ?? (initialPreset === "custom" ? startDay : ""));
   const [startedOn, setStartedOn] = useState(v?.startedOn ?? tenant?.startedOn ?? today);
   const [rent, setRent] = useState(v?.rentAmount ?? String(tenant?.rentAmount ?? 3000));
+  const [skipHistory, setSkipHistory] = useState(v?.skipHistory === "yes");
   const err = (k?: Key) => (k ? t(locale, k) : undefined);
 
   const cycleDay = preset === "custom" ? wholeDay(custom) : Number(preset);
   const rentAmount = /^\d{1,9}$/.test(rent.trim()) ? Number(rent) : null;
   const termsChanged = !tenant || cycleDay !== tenant.cycleStartDay || startedOn !== tenant.startedOn;
   const preview =
-    !locked && termsChanged && cycleDay && rentAmount !== null && isRealDate(startedOn)
+    !locked && termsChanged && cycleDay && rentAmount !== null && isRealDate(startedOn) && !skipHistory
       ? rentPreview({ cycleStartDay: cycleDay, startedOn, rentAmount }, today)
       : null;
   const needsConfirm = !!preview && preview.dueCount > MONTHS_CONFIRM_ABOVE;
@@ -109,6 +110,25 @@ export function TenantForm({ locale, roomNumber, today, tenant, locked }: Props)
         </section>
       ) : (
         <section className="flex flex-col gap-5 rounded-card bg-card p-5 shadow-soft">
+          {!tenant ? (
+            <>
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  name="skipHistory"
+                  value="yes"
+                  checked={skipHistory}
+                  onChange={(e) => setSkipHistory(e.target.checked)}
+                  className="mt-0.5 size-5 flex-none accent-green"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-base font-semibold text-ink">{t(locale, "tenant.existingToggle")}</span>
+                  <span className="text-[0.9375rem] leading-snug text-ink/65">{t(locale, "tenant.existingHint")}</span>
+                </span>
+              </label>
+              <hr className="border-ink/10" />
+            </>
+          ) : null}
           <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="mb-2 text-base font-semibold text-ink">{t(locale, "tenant.cycle")}</legend>
             <div className="grid grid-cols-4 gap-2">

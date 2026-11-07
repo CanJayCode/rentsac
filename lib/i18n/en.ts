@@ -183,6 +183,8 @@ export const en = {
   "tenant.previewDue.none": "Nothing is due yet.",
   "tenant.previewDue.one": "1 month already due.",
   "tenant.previewDue.many": "{n} months already due.",
+  "tenant.existingToggle": "This tenant is already living here",
+  "tenant.existingHint": "Rent will be tracked from the current month only. Past months are assumed settled.",
   "tenant.longAgo": "Tenant moved in long ago? Use the real start of the current rent period instead; older dues are brought in by the import.",
   "tenant.longAgoConfirm": "Yes, charge all {n} months",
   "tenant.rentChangeHint": "A new rent applies from the next month. Earlier months keep their amount.",
